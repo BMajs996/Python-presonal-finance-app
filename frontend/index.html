@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Finance Dashboard</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">₿</div>
+      <div>
+        <strong>Finance</strong>
+        <span>Dashboard</span>
+      </div>
+    </div>
+
+    <nav>
+      <button class="nav-item active" data-view="dashboard">Overview</button>
+      <button class="nav-item" data-view="transactions">Transactions</button>
+      <button class="nav-item" data-view="recurring">Recurring</button>
+      <button class="nav-item" data-view="budgets">Budgets</button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <span>Personal Finance</span>
+      <small>Local SQLite database</small>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Financial overview</p>
+        <h1 id="page-title">Dashboard</h1>
+      </div>
+      <button class="primary" id="add-transaction-btn">+ Transaction</button>
+    </header>
+
+    <section id="dashboard-view" class="view">
+      <div class="cards">
+        <article class="card">
+          <span>Current balance</span>
+          <strong id="balance">$0.00</strong>
+          <small>All recorded transactions</small>
+        </article>
+        <article class="card">
+          <span>Total income</span>
+          <strong id="income">$0.00</strong>
+          <small>Lifetime income</small>
+        </article>
+        <article class="card">
+          <span>Total expenses</span>
+          <strong id="expenses">$0.00</strong>
+          <small>Lifetime expenses</small>
+        </article>
+        <article class="card">
+          <span>Net</span>
+          <strong id="net">$0.00</strong>
+          <small>Income minus expenses</small>
+        </article>
+      </div>
+
+      <div class="grid two">
+        <section class="panel chart-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Balance</h2>
+              <p>Last 30 days</p>
+            </div>
+          </div>
+          <canvas id="balance-chart"></canvas>
+        </section>
+
+        <section class="panel chart-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Expenses by category</h2>
+              <p>All recorded expenses</p>
+            </div>
+          </div>
+          <canvas id="expense-chart"></canvas>
+        </section>
+      </div>
+
+      <div class="grid two">
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Recent transactions</h2>
+              <p>Your latest activity</p>
+            </div>
+            <button class="ghost" data-view-target="transactions">View all</button>
+          </div>
+          <div id="recent-transactions" class="transaction-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Budgets</h2>
+              <p>Current month</p>
+            </div>
+            <button class="ghost" data-view-target="budgets">Manage</button>
+          </div>
+          <div id="budget-list"></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="transactions-view" class="view hidden">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Transactions</h2>
+            <p id="transaction-count">0 records</p>
+          </div>
+          <button class="primary" id="add-transaction-btn-2">+ Add</button>
+        </div>
+
+        <div class="filters">
+          <input id="search" placeholder="Search description or category">
+          <select id="type-filter">
+            <option value="">All types</option>
+            <option value="income">Income</option>
+            <option value="expense">Expense</option>
+          </select>
+          <select id="category-filter">
+            <option value="">All categories</option>
+          </select>
+          <button class="ghost" id="filter-btn">Filter</button>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th><th>Category</th><th>Description</th>
+                <th>Type</th><th>Amount</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="transaction-table"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <section id="recurring-view" class="view hidden">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Recurring transactions</h2>
+            <p>Scheduled automatic entries</p>
+          </div>
+          <button class="primary" id="add-recurring-btn">+ Add recurring</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Category</th><th>Description</th><th>Type</th><th>Amount</th><th>Frequency</th><th>Next date</th><th></th></tr>
+            </thead>
+            <tbody id="recurring-table"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <section id="budgets-view" class="view hidden">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Budgets</h2>
+            <p>Current monthly limits</p>
+          </div>
+          <button class="primary" id="add-budget-btn">+ Add budget</button>
+        </div>
+        <div id="budgets-full" class="budget-grid"></div>
+      </section>
+    </section>
+  </main>
+
+  <div id="modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2 id="modal-title">Add transaction</h2>
+        <button class="close" id="close-modal">×</button>
+      </div>
+      <form id="transaction-form">
+        <input type="hidden" id="transaction-id">
+        <label>Date<input id="form-date" type="date" required></label>
+        <label>Type<select id="form-type"><option value="expense">Expense</option><option value="income">Income</option></select></label>
+        <label>Category<input id="form-category" required></label>
+        <label>Amount<input id="form-amount" type="number" min="0.01" step="0.01" required></label>
+        <label>Description<input id="form-description"></label>
+        <button class="primary wide" type="submit">Save transaction</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
