@@ -22,6 +22,7 @@
       <button class="nav-item" data-view="transactions">Transactions</button>
       <button class="nav-item" data-view="recurring">Recurring</button>
       <button class="nav-item" data-view="budgets">Budgets</button>
+      <button class="nav-item" data-view="reports">Reports</button>
       <button class="nav-item" data-view="accounts">Accounts</button>
       <button class="nav-item" data-view="transfers">Transfers</button>
     </nav>
@@ -241,6 +242,68 @@
         <div id="budgets-full" class="budget-grid"></div>
       </section>
     </section>
+
+    <section id="reports-view" class="view hidden">
+      <div class="cards">
+        <article class="card">
+          <span>Report income</span>
+          <strong id="report-income">$0.00</strong>
+          <small>Selected period</small>
+        </article>
+        <article class="card">
+          <span>Report expenses</span>
+          <strong id="report-expenses">$0.00</strong>
+          <small>Selected period</small>
+        </article>
+        <article class="card">
+          <span>Report net</span>
+          <strong id="report-net">$0.00</strong>
+          <small>Income minus expenses</small>
+        </article>
+        <article class="card">
+          <span>Savings rate</span>
+          <strong id="report-savings">0%</strong>
+          <small>Net divided by income</small>
+        </article>
+      </div>
+
+      <div class="grid two">
+        <section class="panel chart-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Income vs expenses</h2>
+              <p>Monthly totals</p>
+            </div>
+            <select id="report-months" class="compact-select">
+              <option value="6">6 months</option>
+              <option value="12" selected>12 months</option>
+              <option value="24">24 months</option>
+            </select>
+          </div>
+          <canvas id="monthly-chart"></canvas>
+        </section>
+
+        <section class="panel chart-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Top categories</h2>
+              <p>Expense ranking</p>
+            </div>
+          </div>
+          <canvas id="category-trend-chart"></canvas>
+        </section>
+      </div>
+
+      <section class="panel chart-panel">
+        <div class="panel-head">
+          <div>
+            <h2>Balance movement</h2>
+            <p>Month-end balance</p>
+          </div>
+        </div>
+        <canvas id="net-worth-chart"></canvas>
+      </section>
+    </section>
   </main>
 
   <div id="modal" class="modal hidden">
@@ -291,9 +354,10 @@
 
   <div id="recurring-modal" class="modal hidden">
     <div class="modal-card">
-      <div class="modal-head"><h2>Add recurring transaction</h2><button class="close" id="close-recurring-modal">×</button></div>
+      <div class="modal-head"><h2 id="recurring-modal-title">Add recurring transaction</h2><button class="close" id="close-recurring-modal">×</button></div>
       <form id="recurring-form">
-        <label>Start date<input id="recurring-date" type="date" required></label>
+        <input type="hidden" id="recurring-id">
+        <label id="recurring-date-label">Start date<input id="recurring-date" type="date" required></label>
         <label>Type<select id="recurring-type"><option value="expense">Expense</option><option value="income">Income</option></select></label>
         <label>Account<select id="recurring-account"></select></label>
         <label>Category<input id="recurring-category" list="category-suggestions" required maxlength="100"></label>
@@ -307,12 +371,34 @@
 
   <div id="budget-modal" class="modal hidden">
     <div class="modal-card">
-      <div class="modal-head"><h2>Add budget</h2><button class="close" id="close-budget-modal">×</button></div>
+      <div class="modal-head"><h2 id="budget-modal-title">Add budget</h2><button class="close" id="close-budget-modal">×</button></div>
       <form id="budget-form">
+        <input type="hidden" id="budget-id">
         <label>Category<input id="budget-category" list="category-suggestions" required maxlength="100"></label>
         <label>Monthly limit<input id="budget-limit" type="number" min="0.01" step="0.01" required></label>
         <button class="primary wide" type="submit">Save budget</button>
       </form>
+    </div>
+  </div>
+
+  <div id="csv-preview-modal" class="modal hidden">
+    <div class="modal-card wide-modal">
+      <div class="modal-head"><h2>Preview CSV import</h2><button class="close" id="close-csv-preview-modal">×</button></div>
+      <div class="preview-summary">
+        <span><strong id="csv-valid-count">0</strong> valid</span>
+        <span><strong id="csv-invalid-count">0</strong> invalid</span>
+        <span><strong id="csv-duplicate-count">0</strong> duplicates</span>
+      </div>
+      <div class="table-wrap preview-table">
+        <table>
+          <thead><tr><th>Status</th><th>Date</th><th>Account</th><th>Category</th><th>Description</th><th>Type</th><th>Amount</th></tr></thead>
+          <tbody id="csv-preview-table"></tbody>
+        </table>
+      </div>
+      <div class="modal-actions">
+        <button class="ghost" id="cancel-csv-import-btn">Cancel</button>
+        <button class="primary" id="confirm-csv-import-btn">Import valid rows</button>
+      </div>
     </div>
   </div>
 

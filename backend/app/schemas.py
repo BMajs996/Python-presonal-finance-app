@@ -47,9 +47,31 @@ class RecurringCreate(BaseModel):
         return value
 
 
+class RecurringUpdate(BaseModel):
+    type: TransactionType
+    category: str = Field(min_length=1, max_length=100)
+    amount: float = Field(gt=0)
+    description: str = Field(default="", max_length=500)
+    frequency: Frequency
+    next_date: date
+    account_id: int | None = Field(default=None, gt=0)
+
+    @field_validator("category")
+    @classmethod
+    def clean_category(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Category is required")
+        return value
+
+
 class BudgetCreate(BaseModel):
     category: str = Field(min_length=1, max_length=100)
     monthly_limit: float = Field(gt=0)
+
+
+class BudgetUpdate(BudgetCreate):
+    pass
 
 
 class AccountCreate(BaseModel):

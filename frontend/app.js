@@ -1,6 +1,12 @@
 let balanceChart = null;
 let expenseChart = null;
+let monthlyChart = null;
+let categoryTrendChart = null;
+let netWorthChart = null;
 let accountsCache = [];
+let budgetsCache = [];
+let recurringCache = [];
+let csvPreviewRows = [];
 
 const $ = (id) => document.getElementById(id);
 const money = (value) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value || 0));
@@ -26,11 +32,12 @@ function showView(view) {
   document.querySelectorAll(".view").forEach((el) => el.classList.add("hidden"));
   $(`${view}-view`).classList.remove("hidden");
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
-  const titles = { dashboard: "Dashboard", transactions: "Transactions", recurring: "Recurring", budgets: "Budgets", accounts: "Accounts", transfers: "Transfers" };
+  const titles = { dashboard: "Dashboard", transactions: "Transactions", recurring: "Recurring", budgets: "Budgets", reports: "Reports", accounts: "Accounts", transfers: "Transfers" };
   $("page-title").textContent = titles[view];
   if (view === "transactions") loadTransactions();
   if (view === "recurring") loadRecurring();
   if (view === "budgets") loadBudgets();
+  if (view === "reports") loadReports();
   if (view === "accounts") loadAccounts();
   if (view === "transfers") loadTransfers();
 }

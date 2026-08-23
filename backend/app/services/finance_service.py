@@ -58,11 +58,20 @@ class FinanceService:
     def delete_recurring(self, recurring_id: int):
         return self.repository.delete_recurring(recurring_id)
 
+    def update_recurring(self, recurring_id: int, payload):
+        return self.repository.update_recurring(recurring_id, payload)
+
     def budgets(self):
         return self.repository.get_budget_usage()
 
     def create_budget(self, payload):
         return self.repository.add_budget(payload)
 
+    def update_budget(self, budget_id: int, payload):
+        return self.repository.update_budget(budget_id, payload)
+
     def delete_budget(self, budget_id: int):
         return self.repository.delete_budget(budget_id)
+
+    def monthly_report(self, months: int = 12):
+        return self.repository.monthly_report(months)

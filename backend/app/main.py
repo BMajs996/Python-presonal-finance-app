@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from .api import accounts, budgets, dashboard, recurring, transactions, transfers
+from .api import accounts, budgets, dashboard, recurring, reports, transactions, transfers
 from .core.config import settings
 from .database import FinanceDatabase
 from .repositories.finance_repository import FinanceRepository
@@ -44,6 +44,7 @@ app.include_router(transfers.router)
 app.include_router(transactions.router)
 app.include_router(recurring.router)
 app.include_router(budgets.router)
+app.include_router(reports.router)
 
 
 @app.get("/api/health", tags=["system"])

@@ -199,6 +199,20 @@ def test_budget_upsert_does_not_duplicate_category(db):
     assert len(db.get_budget_usage()) == 1
 
 
+def test_update_budget(db):
+    from app.schemas import BudgetCreate
+
+    created = db.add_budget(BudgetCreate(category="Food", monthly_limit=500))
+    updated = db.update_budget(
+        created["id"],
+        BudgetCreate(category="Groceries", monthly_limit=650),
+    )
+
+    assert updated["id"] == created["id"]
+    assert updated["category"] == "Groceries"
+    assert updated["monthly_limit"] == 650
+
+
 def test_recurring_transaction_catches_up_missed_occurrences(db):
     from app.schemas import RecurringCreate
 
@@ -218,6 +232,66 @@ def test_recurring_transaction_catches_up_missed_occurrences(db):
     # The recurring entry itself is scheduled for the month after its
     # configured start date. Verify the record exists and has a valid date.
     assert recurring["next_date"] == "2026-02-01"
+
+
+def test_update_recurring_transaction(db):
+    from app.schemas import RecurringCreate, RecurringUpdate
+
+    recurring = db.add_recurring(
+        RecurringCreate(
+            type="expense",
+            category="Rent",
+            amount=800,
+            description="Rent",
+            frequency="monthly",
+            start_date=date(2026, 1, 1),
+        )
+    )
+    updated = db.update_recurring(
+        recurring["id"],
+        RecurringUpdate(
+            type="income",
+            category="Salary",
+            amount=3000,
+            description="Monthly salary",
+            frequency="monthly",
+            next_date=date(2026, 2, 15),
+        ),
+    )
+
+    assert updated["id"] == recurring["id"]
+    assert updated["type"] == "income"
+    assert updated["category"] == "Salary"
+    assert updated["next_date"] == "2026-02-15"
+
+
+def test_monthly_report(db):
+    from app.schemas import TransactionCreate
+
+    db.add_transaction(
+        TransactionCreate(
+            date=date.today(),
+            type="income",
+            category="Salary",
+            amount=3000,
+        )
+    )
+    db.add_transaction(
+        TransactionCreate(
+            date=date.today(),
+            type="expense",
+            category="Food",
+            amount=600,
+        )
+    )
+
+    report = db.monthly_report(months=3)
+
+    assert len(report["months"]) == 3
+    assert report["summary"]["income"] == 3000
+    assert report["summary"]["expenses"] == 600
+    assert report["summary"]["savings_rate"] == 80
+    assert report["top_categories"][0] == {"category": "Food", "total": 600}
 
 
 def test_categories_are_unique(db):

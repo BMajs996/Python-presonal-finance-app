@@ -549,6 +549,41 @@ class FinanceDatabase:
         with self.conn:
             self.conn.execute("UPDATE recurring_transactions SET active=0 WHERE id=?", (recurring_id,))
 
+    def update_recurring(self, recurring_id: int, payload):
+        if not self.conn.execute(
+            "SELECT id FROM recurring_transactions WHERE id=? AND active=1", (recurring_id,)
+        ).fetchone():
+            return None
+        account_id = self._resolve_account_id(payload.account_id)
+        with self.conn:
+            self.conn.execute(
+                """
+                UPDATE recurring_transactions
+                SET type=?, category=?, amount=?, description=?, frequency=?, next_date=?, account_id=?
+                WHERE id=?
+                """,
+                (
+                    payload.type,
+                    payload.category.strip(),
+                    payload.amount,
+                    payload.description.strip(),
+                    payload.frequency,
+                    payload.next_date.isoformat(),
+                    account_id,
+                    recurring_id,
+                ),
+            )
+        row = self.conn.execute(
+            """
+            SELECT r.*, a.name AS account_name
+            FROM recurring_transactions r
+            LEFT JOIN accounts a ON a.id=r.account_id
+            WHERE r.id=?
+            """,
+            (recurring_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
     # ---------- Budgets ----------
 
     def get_budget_usage(self):
@@ -599,9 +634,146 @@ class FinanceDatabase:
             )
         return next(b for b in self.get_budget_usage() if b["category"] == payload.category.strip())
 
+    def update_budget(self, budget_id: int, payload):
+        month = date.today().strftime("%Y-%m")
+        if not self.conn.execute("SELECT id FROM budgets WHERE id=?", (budget_id,)).fetchone():
+            return None
+        with self.conn:
+            self.conn.execute(
+                """
+                UPDATE budgets
+                SET category=?, monthly_limit=?, month_year=?
+                WHERE id=?
+                """,
+                (payload.category.strip(), payload.monthly_limit, month, budget_id),
+            )
+        return next((b for b in self.get_budget_usage() if b["id"] == budget_id), None)
+
     def delete_budget(self, budget_id: int):
         with self.conn:
             self.conn.execute("DELETE FROM budgets WHERE id=?", (budget_id,))
+
+    # ---------- Reports ----------
+
+    def monthly_report(self, months: int = 12):
+        months = min(max(months, 1), 60)
+        today = date.today().replace(day=1)
+        labels = []
+        for offset in range(months - 1, -1, -1):
+            labels.append(add_months(today, -offset).strftime("%Y-%m"))
+        start_month = labels[0]
+
+        monthly = {
+            label: {
+                "month": label,
+                "income": 0.0,
+                "expenses": 0.0,
+                "net": 0.0,
+                "savings_rate": 0.0,
+                "balance": 0.0,
+            }
+            for label in labels
+        }
+
+        rows = self.conn.execute(
+            """
+            SELECT strftime('%Y-%m', date) month,
+                   SUM(CASE WHEN type='income' THEN amount ELSE 0 END) income,
+                   SUM(CASE WHEN type='expense' THEN amount ELSE 0 END) expenses
+            FROM transactions
+            WHERE strftime('%Y-%m', date) >= ?
+            GROUP BY month
+            ORDER BY month
+            """,
+            (start_month,),
+        ).fetchall()
+        for row in rows:
+            if row["month"] not in monthly:
+                continue
+            income = float(row["income"] or 0)
+            expenses = float(row["expenses"] or 0)
+            monthly[row["month"]].update(
+                {
+                    "income": round(income, 2),
+                    "expenses": round(expenses, 2),
+                    "net": round(income - expenses, 2),
+                    "savings_rate": round(((income - expenses) / income) * 100, 1) if income else 0.0,
+                }
+            )
+
+        opening = self.conn.execute(
+            """
+            SELECT COALESCE((SELECT SUM(opening_balance) FROM accounts),0)
+                 + COALESCE((SELECT SUM(CASE WHEN type='income' THEN amount ELSE -amount END)
+                             FROM transactions WHERE strftime('%Y-%m', date) < ?),0)
+                 + COALESCE((SELECT SUM(amount) FROM transfers WHERE strftime('%Y-%m', date) < ?),0)
+                 - COALESCE((SELECT SUM(amount) FROM transfers WHERE strftime('%Y-%m', date) < ?),0)
+                 AS balance
+            """,
+            (start_month, start_month, start_month),
+        ).fetchone()["balance"]
+        running = float(opening or 0)
+        changes = {
+            row["month"]: float(row["change"] or 0)
+            for row in self.conn.execute(
+                """
+                SELECT month, SUM(change) change
+                FROM (
+                    SELECT strftime('%Y-%m', date) month,
+                           SUM(CASE WHEN type='income' THEN amount ELSE -amount END) change
+                    FROM transactions
+                    WHERE strftime('%Y-%m', date) >= ?
+                    GROUP BY month
+                    UNION ALL
+                    SELECT strftime('%Y-%m', date) month, -SUM(amount) change
+                    FROM transfers
+                    WHERE strftime('%Y-%m', date) >= ?
+                    GROUP BY month
+                    UNION ALL
+                    SELECT strftime('%Y-%m', date) month, SUM(amount) change
+                    FROM transfers
+                    WHERE strftime('%Y-%m', date) >= ?
+                    GROUP BY month
+                )
+                GROUP BY month
+                """,
+                (start_month, start_month, start_month),
+            )
+        }
+        for label in labels:
+            running += changes.get(label, 0.0)
+            monthly[label]["balance"] = round(running, 2)
+
+        category_rows = self.conn.execute(
+            """
+            SELECT category, SUM(amount) total
+            FROM transactions
+            WHERE type='expense' AND strftime('%Y-%m', date) >= ?
+            GROUP BY category
+            ORDER BY total DESC
+            LIMIT 10
+            """,
+            (start_month,),
+        ).fetchall()
+        top_categories = [
+            {"category": row["category"], "total": round(float(row["total"] or 0), 2)}
+            for row in category_rows
+        ]
+
+        series = list(monthly.values())
+        total_income = round(sum(row["income"] for row in series), 2)
+        total_expenses = round(sum(row["expenses"] for row in series), 2)
+        net = round(total_income - total_expenses, 2)
+        return {
+            "months": series,
+            "top_categories": top_categories,
+            "summary": {
+                "income": total_income,
+                "expenses": total_expenses,
+                "net": net,
+                "savings_rate": round((net / total_income) * 100, 1) if total_income else 0.0,
+            },
+        }
 
     def close(self):
         self.conn.close()
