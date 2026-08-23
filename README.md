@@ -18,8 +18,8 @@ From the repository root:
 ```bash
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn backend.app.main:app --reload
+pip install -r backend/requirements.txt
+python run.py
 ```
 
 Open http://127.0.0.1:8000
