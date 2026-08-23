@@ -3,9 +3,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-
 TransactionType = Literal["income", "expense"]
 Frequency = Literal["daily", "weekly", "monthly", "yearly"]
+AccountType = Literal["checking", "savings", "cash", "credit_card", "investment", "other"]
 
 
 class TransactionCreate(BaseModel):
@@ -14,6 +14,7 @@ class TransactionCreate(BaseModel):
     category: str = Field(min_length=1, max_length=100)
     amount: float = Field(gt=0)
     description: str = Field(default="", max_length=500)
+    account_id: int | None = Field(default=None, gt=0)
 
     @field_validator("category")
     @classmethod
@@ -35,11 +36,48 @@ class RecurringCreate(BaseModel):
     description: str = Field(default="", max_length=500)
     frequency: Frequency
     start_date: date
+    account_id: int | None = Field(default=None, gt=0)
+
+    @field_validator("category")
+    @classmethod
+    def clean_category(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Category is required")
+        return value
 
 
 class BudgetCreate(BaseModel):
     category: str = Field(min_length=1, max_length=100)
     monthly_limit: float = Field(gt=0)
+
+
+class AccountCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    type: AccountType = "checking"
+    currency: str = Field(default="USD", min_length=3, max_length=3)
+    opening_balance: float = 0
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Account name is required")
+        return value
+
+    @field_validator("currency")
+    @classmethod
+    def clean_currency(cls, value: str) -> str:
+        return value.strip().upper()
+
+
+class TransferCreate(BaseModel):
+    date: date
+    from_account_id: int = Field(gt=0)
+    to_account_id: int = Field(gt=0)
+    amount: float = Field(gt=0)
+    description: str = Field(default="", max_length=500)
 
 
 class TransactionResponse(BaseModel):
@@ -49,6 +87,32 @@ class TransactionResponse(BaseModel):
     category: str
     amount: float
     description: str
+    account_id: int | None = None
+    account_name: str | None = None
+
+
+class AccountResponse(BaseModel):
+    id: int
+    name: str
+    type: str
+    currency: str
+    opening_balance: float
+    active: int
+    created_at: str
+    balance: float
+    transaction_count: int
+
+
+class TransferResponse(BaseModel):
+    id: int
+    date: str
+    from_account_id: int
+    to_account_id: int
+    amount: float
+    description: str
+    from_account_name: str
+    to_account_name: str
+    created_at: str
 
 
 class BudgetResponse(BaseModel):
@@ -69,3 +133,4 @@ class DashboardResponse(BaseModel):
     balance_history: list[dict]
     recent_transactions: list[dict]
     budgets: list[dict]
+    accounts: list[dict]

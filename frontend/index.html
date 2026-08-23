@@ -22,6 +22,8 @@
       <button class="nav-item" data-view="transactions">Transactions</button>
       <button class="nav-item" data-view="recurring">Recurring</button>
       <button class="nav-item" data-view="budgets">Budgets</button>
+      <button class="nav-item" data-view="accounts">Accounts</button>
+      <button class="nav-item" data-view="transfers">Transfers</button>
     </nav>
 
     <div class="sidebar-footer">
@@ -89,12 +91,12 @@
         <section class="panel">
           <div class="panel-head">
             <div>
-              <h2>Recent transactions</h2>
-              <p>Your latest activity</p>
+              <h2>Accounts</h2>
+              <p>Your current balances</p>
             </div>
-            <button class="ghost" data-view-target="transactions">View all</button>
+            <button class="ghost" data-view-target="accounts">Manage</button>
           </div>
-          <div id="recent-transactions" class="transaction-list"></div>
+          <div id="account-list" class="account-grid"></div>
         </section>
 
         <section class="panel">
@@ -106,6 +108,19 @@
             <button class="ghost" data-view-target="budgets">Manage</button>
           </div>
           <div id="budget-list"></div>
+        </section>
+      </div>
+
+      <div class="grid two">
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Recent transactions</h2>
+              <p>Your latest activity</p>
+            </div>
+            <button class="ghost" data-view-target="transactions">View all</button>
+          </div>
+          <div id="recent-transactions" class="transaction-list"></div>
         </section>
       </div>
     </section>
@@ -130,6 +145,9 @@
           <select id="category-filter">
             <option value="">All categories</option>
           </select>
+          <select id="account-filter">
+            <option value="">All accounts</option>
+          </select>
           <button class="ghost" id="filter-btn">Filter</button>
         </div>
 
@@ -137,7 +155,7 @@
           <table>
             <thead>
               <tr>
-                <th>Date</th><th>Category</th><th>Description</th>
+                <th>Date</th><th>Account</th><th>Category</th><th>Description</th>
                 <th>Type</th><th>Amount</th><th></th>
               </tr>
             </thead>
@@ -159,9 +177,40 @@
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Category</th><th>Description</th><th>Type</th><th>Amount</th><th>Frequency</th><th>Next date</th><th></th></tr>
+              <tr><th>Category</th><th>Account</th><th>Description</th><th>Type</th><th>Amount</th><th>Frequency</th><th>Next date</th><th></th></tr>
             </thead>
             <tbody id="recurring-table"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <section id="accounts-view" class="view hidden">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Accounts</h2>
+            <p>Bank accounts, cash, cards and savings</p>
+          </div>
+          <button class="primary" id="add-account-btn">+ Add account</button>
+        </div>
+        <div id="accounts-full" class="account-grid"></div>
+      </section>
+    </section>
+
+    <section id="transfers-view" class="view hidden">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Transfers</h2>
+            <p>Move money between accounts without creating income or expenses</p>
+          </div>
+          <button class="primary" id="add-transfer-btn">+ Transfer</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>From</th><th>To</th><th>Amount</th><th>Description</th><th></th></tr></thead>
+            <tbody id="transfer-table"></tbody>
           </table>
         </div>
       </section>
@@ -191,10 +240,38 @@
         <input type="hidden" id="transaction-id">
         <label>Date<input id="form-date" type="date" required></label>
         <label>Type<select id="form-type"><option value="expense">Expense</option><option value="income">Income</option></select></label>
+        <label>Account<select id="form-account"></select></label>
         <label>Category<input id="form-category" required></label>
         <label>Amount<input id="form-amount" type="number" min="0.01" step="0.01" required></label>
         <label>Description<input id="form-description"></label>
         <button class="primary wide" type="submit">Save transaction</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="account-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head"><h2>Add account</h2><button class="close" id="close-account-modal">×</button></div>
+      <form id="account-form">
+        <label>Name<input id="account-name" required maxlength="100"></label>
+        <label>Type<select id="account-type"><option value="checking">Checking</option><option value="savings">Savings</option><option value="cash">Cash</option><option value="credit_card">Credit card</option><option value="investment">Investment</option><option value="other">Other</option></select></label>
+        <label>Currency<input id="account-currency" value="USD" maxlength="3" required></label>
+        <label>Opening balance<input id="account-opening" type="number" step="0.01" value="0"></label>
+        <button class="primary wide" type="submit">Save account</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="transfer-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head"><h2>Transfer money</h2><button class="close" id="close-transfer-modal">×</button></div>
+      <form id="transfer-form">
+        <label>Date<input id="transfer-date" type="date" required></label>
+        <label>From<select id="transfer-from" required></select></label>
+        <label>To<select id="transfer-to" required></select></label>
+        <label>Amount<input id="transfer-amount" type="number" min="0.01" step="0.01" required></label>
+        <label>Description<input id="transfer-description" maxlength="500"></label>
+        <button class="primary wide" type="submit">Create transfer</button>
       </form>
     </div>
   </div>

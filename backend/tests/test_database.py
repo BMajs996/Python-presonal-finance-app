@@ -243,3 +243,149 @@ def test_categories_are_unique(db):
     )
 
     assert db.categories() == ["Food", "Transport"]
+
+
+def test_legacy_database_is_migrated_without_changing_balance(tmp_path):
+    import sqlite3
+
+    from app.database import FinanceDatabase
+
+    legacy_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(legacy_path)
+    conn.executescript(
+        """
+        CREATE TABLE transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT,
+            type TEXT,
+            category TEXT,
+            amount REAL,
+            description TEXT
+        );
+        CREATE TABLE recurring_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            type TEXT,
+            category TEXT,
+            amount REAL,
+            description TEXT,
+            frequency TEXT,
+            next_date TEXT,
+            active INTEGER DEFAULT 1
+        );
+        CREATE TABLE budgets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category TEXT UNIQUE,
+            monthly_limit REAL,
+            month_year TEXT
+        );
+        CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
+        INSERT INTO transactions(date, type, category, amount, description)
+        VALUES ('2026-08-20', 'income', 'Salary', 1000, 'Legacy salary');
+        INSERT INTO transactions(date, type, category, amount, description)
+        VALUES ('2026-08-21', 'expense', 'Food', 100, 'Legacy food');
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    database = FinanceDatabase(legacy_path)
+    try:
+        assert database.conn.execute(
+            "SELECT MAX(version) FROM schema_migrations"
+        ).fetchone()[0] == 1
+        assert database.conn.execute(
+            "SELECT COUNT(*) FROM accounts"
+        ).fetchone()[0] == 1
+        assert database.conn.execute(
+            "SELECT COUNT(*) FROM transactions WHERE account_id IS NOT NULL"
+        ).fetchone()[0] == 2
+        assert database.dashboard()["balance"] == 900
+    finally:
+        database.close()
+
+
+def test_accounts_and_balances(db):
+    from app.schemas import AccountCreate, TransactionCreate
+
+    savings = db.add_account(
+        AccountCreate(name="Savings", type="savings", opening_balance=1000)
+    )
+    db.add_transaction(
+        TransactionCreate(
+            date=date.today(),
+            type="income",
+            category="Interest",
+            amount=25,
+            account_id=savings["id"],
+        )
+    )
+    db.add_transaction(
+        TransactionCreate(
+            date=date.today(),
+            type="expense",
+            category="Food",
+            amount=75,
+            account_id=savings["id"],
+        )
+    )
+
+    account = db.get_account(savings["id"])
+    assert account["balance"] == 950
+    assert account["transaction_count"] == 2
+
+
+def test_transfers_move_money_without_changing_global_net(db):
+    from app.schemas import AccountCreate, TransferCreate
+
+    checking = db.add_account(AccountCreate(name="Checking"))
+    savings = db.add_account(AccountCreate(name="Savings", type="savings"))
+
+    transfer = db.add_transfer(
+        TransferCreate(
+            date=date.today(),
+            from_account_id=checking["id"],
+            to_account_id=savings["id"],
+            amount=500,
+            description="Move to savings",
+        )
+    )
+
+    assert transfer["amount"] == 500
+    assert db.get_account(checking["id"])["balance"] == -500
+    assert db.get_account(savings["id"])["balance"] == 500
+    assert db.dashboard()["net"] == 0
+    assert db.dashboard()["balance"] == 0
+
+
+def test_transaction_defaults_to_main_account(db):
+    from app.schemas import TransactionCreate
+
+    transaction = db.add_transaction(
+        TransactionCreate(
+            date=date.today(),
+            type="income",
+            category="Salary",
+            amount=100,
+        )
+    )
+
+    assert transaction["account_name"] == "Main Account"
+    assert transaction["account_id"] is not None
+
+
+def test_transfer_cannot_use_same_account(db):
+    from app.schemas import TransferCreate
+
+    main_id = db._default_account_id()
+    try:
+        db.add_transfer(
+            TransferCreate(
+                date=date.today(),
+                from_account_id=main_id,
+                to_account_id=main_id,
+                amount=100,
+            )
+        )
+        assert False, "Expected same-account transfer to fail"
+    except ValueError as exc:
+        assert "different" in str(exc)

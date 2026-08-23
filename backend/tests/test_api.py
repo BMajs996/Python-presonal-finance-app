@@ -6,18 +6,12 @@ from app.main import app
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    # The API module owns a global database. Replace it with an isolated
-    # temporary database for every test.
-    from app.database import FinanceDatabase
-    import app.main as main
+    from app.core.config import settings
 
-    database = FinanceDatabase(tmp_path / "api-test.db")
-    monkeypatch.setattr(main, "db", database)
+    monkeypatch.setattr(settings, "database_path", tmp_path / "api-test.db")
 
     with TestClient(app) as test_client:
         yield test_client
-
-    database.close()
 
 
 def test_health(client):
@@ -179,3 +173,87 @@ def test_root_page_is_served(client):
 
     assert response.status_code == 200
     assert "Finance Dashboard" in response.text
+
+
+def test_accounts_api(client):
+    response = client.get("/api/accounts")
+    assert response.status_code == 200
+    accounts = response.json()
+    assert len(accounts) == 1
+    assert accounts[0]["name"] == "Main Account"
+
+    created = client.post(
+        "/api/accounts",
+        json={"name": "Savings", "type": "savings", "opening_balance": 1000},
+    )
+    assert created.status_code == 201
+    assert created.json()["balance"] == 1000
+
+
+def test_transaction_can_be_assigned_to_account(client):
+    account = client.post(
+        "/api/accounts",
+        json={"name": "Cash", "type": "cash"},
+    ).json()
+
+    response = client.post(
+        "/api/transactions",
+        json={
+            "date": "2026-08-23",
+            "type": "expense",
+            "category": "Food",
+            "amount": 25,
+            "account_id": account["id"],
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["account_name"] == "Cash"
+
+
+def test_transfer_api_does_not_create_income_or_expense(client):
+    first = client.post(
+        "/api/accounts",
+        json={"name": "Checking", "type": "checking"},
+    ).json()
+    second = client.post(
+        "/api/accounts",
+        json={"name": "Savings", "type": "savings"},
+    ).json()
+
+    response = client.post(
+        "/api/transfers",
+        json={
+            "date": "2026-08-23",
+            "from_account_id": first["id"],
+            "to_account_id": second["id"],
+            "amount": 500,
+            "description": "Savings transfer",
+        },
+    )
+    assert response.status_code == 201
+
+    dashboard = client.get("/api/dashboard").json()
+    assert dashboard["income"] == 0
+    assert dashboard["expenses"] == 0
+    assert dashboard["net"] == 0
+    assert dashboard["balance"] == 0
+
+    transfers = client.get("/api/transfers").json()
+    assert len(transfers) == 1
+    assert transfers[0]["from_account_name"] == "Checking"
+    assert transfers[0]["to_account_name"] == "Savings"
+
+
+def test_transfer_rejects_same_account(client):
+    account = client.get("/api/accounts").json()[0]
+    response = client.post(
+        "/api/transfers",
+        json={
+            "date": "2026-08-23",
+            "from_account_id": account["id"],
+            "to_account_id": account["id"],
+            "amount": 100,
+        },
+    )
+    assert response.status_code == 400
