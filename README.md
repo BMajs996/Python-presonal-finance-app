@@ -13,12 +13,13 @@ The backend keeps the existing SQLite schema compatible with the desktop applica
 
 ## Run locally
 
+From the repository root:
+
 ```bash
-cd backend
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn backend.app.main:app --reload
 ```
 
 Open http://127.0.0.1:8000
@@ -125,6 +126,10 @@ The default database remains `data/personal_finance.db`. Override it with `DATAB
 ```bash
 uvicorn backend.app.main:app --reload
 ```
+
+If you `cd backend` first, use `uvicorn app.main:app --reload` instead. Running
+`uvicorn app.main:app --reload` from the repository root will fail with
+`ModuleNotFoundError: No module named 'app'`.
 
 
 ## Accounts and transfers
