@@ -1,5 +1,6 @@
 let balanceChart = null;
 let expenseChart = null;
+let accountsCache = [];
 
 const $ = (id) => document.getElementById(id);
 const money = (value) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value || 0));
@@ -35,11 +36,13 @@ function showView(view) {
 }
 
 async function loadDashboard() {
-  const data = await api("/api/dashboard?days=30");
+  const days = $("dashboard-days")?.value || "30";
+  const data = await api(`/api/dashboard?days=${encodeURIComponent(days)}`);
   $("balance").textContent = money(data.balance);
   $("income").textContent = money(data.income);
   $("expenses").textContent = money(data.expenses);
   $("net").textContent = money(data.net);
+  $("balance-period-label").textContent = `Last ${days} days`;
   renderCharts(data);
   renderRecent(data.recent_transactions);
   renderBudgets(data.budgets, $("budget-list"));
@@ -70,9 +73,11 @@ async function loadAccounts() {
 
 async function loadCategories() {
   const [categories, accounts] = await Promise.all([api("/api/categories"), api("/api/accounts")]);
+  accountsCache = accounts;
   $("category-filter").innerHTML = `<option value="">All categories</option>` + categories.map((c) => `<option value="${escapeAttr(c)}">${escapeHtml(c)}</option>`).join("");
+  $("category-suggestions").innerHTML = categories.map((c) => `<option value="${escapeAttr(c)}"></option>`).join("");
   $("account-filter").innerHTML = `<option value="">All accounts</option>` + accounts.map((a) => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join("");
-  [$("form-account"), $("transfer-from"), $("transfer-to")].forEach((select) => {
+  [$("form-account"), $("transfer-from"), $("transfer-to"), $("recurring-account")].forEach((select) => {
     if (!select) return;
     select.innerHTML = accounts.map((a) => `<option value="${a.id}">${escapeHtml(a.name)} (${money(a.balance)})</option>`).join("");
   });
@@ -81,9 +86,19 @@ async function loadCategories() {
 async function loadTransactions() {
   const params = new URLSearchParams({ search: $("search").value, type: $("type-filter").value, category: $("category-filter").value });
   if ($("account-filter").value) params.set("account_id", $("account-filter").value);
+  if ($("date-start-filter").value) params.set("date_start", $("date-start-filter").value);
+  if ($("date-end-filter").value) params.set("date_end", $("date-end-filter").value);
   const data = await api(`/api/transactions?${params}`);
   $("transaction-count").textContent = `${data.total} record${data.total === 1 ? "" : "s"}`;
   $("transaction-table").innerHTML = data.items.map((t) => `<tr><td>${t.date}</td><td>${escapeHtml(t.account_name || "Main Account")}</td><td>${escapeHtml(t.category)}</td><td>${escapeHtml(t.description || "")}</td><td class="${t.type}">${t.type}</td><td class="amount ${t.type}">${t.type === "income" ? "+" : "-"}${money(t.amount)}</td><td><button class="ghost" onclick="editTransaction(${t.id})">Edit</button><button class="ghost" onclick="removeTransaction(${t.id})">Delete</button></td></tr>`).join("");
+}
+
+function transactionFilterParams() {
+  const params = new URLSearchParams({ search: $("search").value, type: $("type-filter").value, category: $("category-filter").value });
+  if ($("account-filter").value) params.set("account_id", $("account-filter").value);
+  if ($("date-start-filter").value) params.set("date_start", $("date-start-filter").value);
+  if ($("date-end-filter").value) params.set("date_end", $("date-end-filter").value);
+  return params;
 }
 
 async function editTransaction(id) {
@@ -131,11 +146,60 @@ async function loadRecurring() {
 }
 async function removeRecurring(id) { if (!confirm("Deactivate this recurring transaction?")) return; await api(`/api/recurring/${id}`, { method: "DELETE" }); toast("Recurring transaction deactivated"); await refresh(); }
 
+async function openRecurringModal() {
+  await loadCategories();
+  $("recurring-date").value = new Date().toISOString().slice(0, 10);
+  $("recurring-type").value = "expense";
+  $("recurring-category").value = "";
+  $("recurring-amount").value = "";
+  $("recurring-frequency").value = "monthly";
+  $("recurring-description").value = "";
+  $("recurring-modal").classList.remove("hidden");
+}
+
+async function saveRecurring(event) {
+  event.preventDefault();
+  const payload = {
+    start_date: $("recurring-date").value,
+    type: $("recurring-type").value,
+    category: $("recurring-category").value,
+    amount: Number($("recurring-amount").value),
+    frequency: $("recurring-frequency").value,
+    description: $("recurring-description").value,
+    account_id: Number($("recurring-account").value),
+  };
+  await api("/api/recurring", { method: "POST", body: JSON.stringify(payload) });
+  $("recurring-modal").classList.add("hidden");
+  toast("Recurring transaction added");
+  await refresh();
+}
+
 async function loadBudgets() { const budgets = await api("/api/budgets"); renderBudgets(budgets, $("budgets-full"), true); }
 function renderBudgets(budgets, target, cards = false) { if (!budgets.length) { target.innerHTML = "<p>No budgets configured.</p>"; return; } target.innerHTML = budgets.map((b) => cards ? budgetCard(b) : budgetItem(b)).join(""); }
 function budgetItem(b) { const cls = b.percentage >= 100 ? "danger" : b.percentage >= 80 ? "warn" : ""; return `<div class="budget-item"><div class="budget-top"><strong>${escapeHtml(b.category)}</strong><span>${money(b.spent)} / ${money(b.monthly_limit)}</span></div><div class="progress"><span class="${cls}" style="width:${Math.min(100, b.percentage)}%"></span></div></div>`; }
 function budgetCard(b) { const cls = b.percentage >= 100 ? "danger" : b.percentage >= 80 ? "warn" : ""; return `<div class="budget-card"><div class="budget-top"><strong>${escapeHtml(b.category)}</strong><button class="ghost" onclick="removeBudget(${b.id})">Delete</button></div><p>${money(b.spent)} spent of ${money(b.monthly_limit)}</p><div class="progress"><span class="${cls}" style="width:${Math.min(100, b.percentage)}%"></span></div><small>${b.percentage}% used</small></div>`; }
 async function removeBudget(id) { if (!confirm("Delete this budget?")) return; await api(`/api/budgets/${id}`, { method: "DELETE" }); toast("Budget deleted"); await refresh(); }
+
+async function openBudgetModal() {
+  await loadCategories();
+  $("budget-category").value = "";
+  $("budget-limit").value = "";
+  $("budget-modal").classList.remove("hidden");
+}
+
+async function saveBudget(event) {
+  event.preventDefault();
+  await api("/api/budgets", {
+    method: "POST",
+    body: JSON.stringify({
+      category: $("budget-category").value,
+      monthly_limit: Number($("budget-limit").value),
+    }),
+  });
+  $("budget-modal").classList.add("hidden");
+  toast("Budget saved");
+  await refresh();
+}
 
 async function loadTransfers() {
   const rows = await api("/api/transfers");
@@ -147,6 +211,115 @@ async function openAccountModal() { $("account-name").value = ""; $("account-typ
 async function saveAccount(event) { event.preventDefault(); await api("/api/accounts", { method: "POST", body: JSON.stringify({ name: $("account-name").value, type: $("account-type").value, currency: $("account-currency").value, opening_balance: Number($("account-opening").value) }) }); $("account-modal").classList.add("hidden"); toast("Account added"); await refresh(); }
 async function openTransferModal() { await loadCategories(); $("transfer-date").value = new Date().toISOString().slice(0, 10); $("transfer-amount").value = ""; $("transfer-description").value = ""; $("transfer-modal").classList.remove("hidden"); }
 async function saveTransfer(event) { event.preventDefault(); await api("/api/transfers", { method: "POST", body: JSON.stringify({ date: $("transfer-date").value, from_account_id: Number($("transfer-from").value), to_account_id: Number($("transfer-to").value), amount: Number($("transfer-amount").value), description: $("transfer-description").value }) }); $("transfer-modal").classList.add("hidden"); toast("Transfer created"); await refresh(); }
+
+async function fetchAllTransactionsForExport() {
+  const params = transactionFilterParams();
+  const items = [];
+  let offset = 0;
+  while (true) {
+    params.set("limit", "500");
+    params.set("offset", String(offset));
+    const data = await api(`/api/transactions?${params}`);
+    items.push(...data.items);
+    if (items.length >= data.total || data.items.length === 0) return items;
+    offset += data.items.length;
+  }
+}
+
+function csvValue(value) {
+  const text = String(value ?? "");
+  return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+async function exportTransactionsCsv() {
+  const rows = await fetchAllTransactionsForExport();
+  const headers = ["date", "type", "category", "amount", "description", "account_id", "account_name"];
+  const lines = [headers.join(",")].concat(rows.map((t) => headers.map((key) => csvValue(t[key])).join(",")));
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+  const link = document.createElement("a");
+  const stamp = new Date().toISOString().slice(0, 10);
+  link.href = URL.createObjectURL(blob);
+  link.download = `transactions-${stamp}.csv`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+  toast(`${rows.length} transaction${rows.length === 1 ? "" : "s"} exported`);
+}
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    const next = text[i + 1];
+    if (quoted && char === '"' && next === '"') {
+      cell += '"';
+      i += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (!quoted && char === ",") {
+      row.push(cell);
+      cell = "";
+    } else if (!quoted && (char === "\n" || char === "\r")) {
+      if (char === "\r" && next === "\n") i += 1;
+      row.push(cell);
+      if (row.some((value) => value.trim())) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  row.push(cell);
+  if (row.some((value) => value.trim())) rows.push(row);
+  return rows;
+}
+
+function rowToTransaction(headers, values) {
+  const row = Object.fromEntries(headers.map((header, index) => [header.trim().toLowerCase(), values[index]?.trim() || ""]));
+  const accountName = row.account_name || row.account;
+  const account = accountName ? accountsCache.find((a) => a.name.toLowerCase() === accountName.toLowerCase()) : null;
+  const payload = {
+    date: row.date,
+    type: row.type.toLowerCase(),
+    category: row.category,
+    amount: Number(row.amount),
+    description: row.description || "",
+  };
+  if (row.account_id) payload.account_id = Number(row.account_id);
+  else if (account) payload.account_id = account.id;
+  return payload;
+}
+
+async function importTransactionsCsv(event) {
+  const file = event.target.files?.[0];
+  event.target.value = "";
+  if (!file) return;
+  await loadCategories();
+  const text = await file.text();
+  const rows = parseCsv(text);
+  if (rows.length < 2) {
+    toast("CSV must include a header row and at least one transaction");
+    return;
+  }
+  const headers = rows[0].map((header) => header.trim().toLowerCase());
+  const required = ["date", "type", "category", "amount"];
+  const missing = required.filter((header) => !headers.includes(header));
+  if (missing.length) {
+    toast(`Missing CSV columns: ${missing.join(", ")}`);
+    return;
+  }
+
+  let imported = 0;
+  for (const values of rows.slice(1)) {
+    const payload = rowToTransaction(headers, values);
+    await api("/api/transactions", { method: "POST", body: JSON.stringify(payload) });
+    imported += 1;
+  }
+  toast(`${imported} transaction${imported === 1 ? "" : "s"} imported`);
+  await refresh();
+}
 
 async function refresh() {
   await Promise.all([loadDashboard(), loadCategories()]);
@@ -167,13 +340,21 @@ $("add-transaction-btn-2").addEventListener("click", openTransactionModal);
 $("close-modal").addEventListener("click", () => $("modal").classList.add("hidden"));
 $("transaction-form").addEventListener("submit", saveTransaction);
 $("filter-btn").addEventListener("click", loadTransactions);
+$("dashboard-days").addEventListener("change", loadDashboard);
+$("export-csv-btn").addEventListener("click", exportTransactionsCsv);
+$("import-csv-btn").addEventListener("click", () => $("csv-import-file").click());
+$("csv-import-file").addEventListener("change", importTransactionsCsv);
 $("add-account-btn").addEventListener("click", openAccountModal);
 $("close-account-modal").addEventListener("click", () => $("account-modal").classList.add("hidden"));
 $("account-form").addEventListener("submit", saveAccount);
 $("add-transfer-btn").addEventListener("click", openTransferModal);
 $("close-transfer-modal").addEventListener("click", () => $("transfer-modal").classList.add("hidden"));
 $("transfer-form").addEventListener("submit", saveTransfer);
-$("add-recurring-btn").addEventListener("click", () => toast("Recurring creation form is the next UI enhancement."));
-$("add-budget-btn").addEventListener("click", () => toast("Budget creation form is the next UI enhancement."));
+$("add-recurring-btn").addEventListener("click", openRecurringModal);
+$("close-recurring-modal").addEventListener("click", () => $("recurring-modal").classList.add("hidden"));
+$("recurring-form").addEventListener("submit", saveRecurring);
+$("add-budget-btn").addEventListener("click", openBudgetModal);
+$("close-budget-modal").addEventListener("click", () => $("budget-modal").classList.add("hidden"));
+$("budget-form").addEventListener("submit", saveBudget);
 
 refresh().catch((error) => { console.error(error); toast(error.message); });

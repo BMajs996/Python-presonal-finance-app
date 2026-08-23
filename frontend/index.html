@@ -70,8 +70,14 @@
           <div class="panel-head">
             <div>
               <h2>Balance</h2>
-              <p>Last 30 days</p>
+              <p id="balance-period-label">Last 30 days</p>
             </div>
+            <select id="dashboard-days" class="compact-select">
+              <option value="7">7 days</option>
+              <option value="30" selected>30 days</option>
+              <option value="90">90 days</option>
+              <option value="365">1 year</option>
+            </select>
           </div>
           <canvas id="balance-chart"></canvas>
         </section>
@@ -132,7 +138,12 @@
             <h2>Transactions</h2>
             <p id="transaction-count">0 records</p>
           </div>
-          <button class="primary" id="add-transaction-btn-2">+ Add</button>
+          <div class="actions">
+            <input id="csv-import-file" class="hidden" type="file" accept=".csv,text/csv">
+            <button class="ghost" id="import-csv-btn">Import CSV</button>
+            <button class="ghost" id="export-csv-btn">Export CSV</button>
+            <button class="primary" id="add-transaction-btn-2">+ Add</button>
+          </div>
         </div>
 
         <div class="filters">
@@ -148,6 +159,8 @@
           <select id="account-filter">
             <option value="">All accounts</option>
           </select>
+          <input id="date-start-filter" type="date" aria-label="Start date">
+          <input id="date-end-filter" type="date" aria-label="End date">
           <button class="ghost" id="filter-btn">Filter</button>
         </div>
 
@@ -177,7 +190,7 @@
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Category</th><th>Account</th><th>Description</th><th>Type</th><th>Amount</th><th>Frequency</th><th>Next date</th><th></th></tr>
+              <tr><th>Category</th><th>Description</th><th>Account</th><th>Type</th><th>Amount</th><th>Frequency</th><th>Next date</th><th></th></tr>
             </thead>
             <tbody id="recurring-table"></tbody>
           </table>
@@ -275,6 +288,35 @@
       </form>
     </div>
   </div>
+
+  <div id="recurring-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head"><h2>Add recurring transaction</h2><button class="close" id="close-recurring-modal">×</button></div>
+      <form id="recurring-form">
+        <label>Start date<input id="recurring-date" type="date" required></label>
+        <label>Type<select id="recurring-type"><option value="expense">Expense</option><option value="income">Income</option></select></label>
+        <label>Account<select id="recurring-account"></select></label>
+        <label>Category<input id="recurring-category" list="category-suggestions" required maxlength="100"></label>
+        <label>Amount<input id="recurring-amount" type="number" min="0.01" step="0.01" required></label>
+        <label>Frequency<select id="recurring-frequency"><option value="monthly">Monthly</option><option value="weekly">Weekly</option><option value="daily">Daily</option><option value="yearly">Yearly</option></select></label>
+        <label>Description<input id="recurring-description" maxlength="500"></label>
+        <button class="primary wide" type="submit">Save recurring transaction</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="budget-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head"><h2>Add budget</h2><button class="close" id="close-budget-modal">×</button></div>
+      <form id="budget-form">
+        <label>Category<input id="budget-category" list="category-suggestions" required maxlength="100"></label>
+        <label>Monthly limit<input id="budget-limit" type="number" min="0.01" step="0.01" required></label>
+        <button class="primary wide" type="submit">Save budget</button>
+      </form>
+    </div>
+  </div>
+
+  <datalist id="category-suggestions"></datalist>
 
   <div id="toast" class="toast hidden"></div>
   <script src="/app.js"></script>
