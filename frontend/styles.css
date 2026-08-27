@@ -83,6 +83,9 @@ button {
 .primary { background: var(--accent); color: #fff; font-weight: 650; }
 .primary:hover { background: var(--accent-dark); }
 .ghost { background: var(--surface-2); color: var(--text); }
+.row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.row-actions .ghost { padding: 7px 9px; }
+.primary:disabled { cursor: not-allowed; opacity: .55; }
 .wide { width: 100%; margin-top: 8px; }
 
 .filters { display: flex; gap: 10px; margin-bottom: 18px; }
@@ -133,6 +136,16 @@ td.amount { font-weight: 700; text-align: right; }
   width: min(480px, 100%); background: var(--surface);
   border-radius: 16px; padding: 24px; box-shadow: 0 30px 80px rgba(0,0,0,.25);
 }
+.modal-card.wide-modal { width: min(980px, 100%); }
+.preview-summary { display: flex; gap: 22px; margin-bottom: 16px; color: var(--muted); font-size: 13px; }
+.preview-summary strong { color: var(--text); }
+.preview-table { max-height: min(52vh, 520px); }
+.status { display: inline-block; padding: 4px 7px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: capitalize; }
+.status.valid { color: #087451; background: #e5f6ef; }
+.status.invalid { color: #a82e3a; background: #fdebed; }
+.status.duplicate { color: #8a5c00; background: #fff3d7; }
+.row-invalid td, .row-duplicate td { color: var(--muted); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .close { background: var(--surface-2); font-size: 20px; width: 36px; height: 36px; padding: 0; }
 form { display: grid; gap: 13px; }
@@ -160,6 +173,7 @@ label input, label select { margin-top: 6px; }
   .actions { justify-content: flex-start; }
   .compact-select { width: 100%; }
   .budget-grid { grid-template-columns: 1fr; }
+  .preview-summary { gap: 10px; justify-content: space-between; }
 }
 
 .account-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }

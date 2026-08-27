@@ -149,25 +149,35 @@ async function saveTransaction(event) {
 
 async function loadRecurring() {
   const rows = await api("/api/recurring");
-  $("recurring-table").innerHTML = rows.length ? rows.map((r) => `<tr><td>${escapeHtml(r.category)}</td><td>${escapeHtml(r.description || "")}</td><td>${escapeHtml(r.account_name || "Main Account")}</td><td class="${r.type}">${r.type}</td><td class="amount ${r.type}">${money(r.amount)}</td><td>${r.frequency}</td><td>${r.next_date}</td><td><button class="ghost" onclick="removeRecurring(${r.id})">Delete</button></td></tr>`).join("") : `<tr><td colspan="8">No recurring transactions.</td></tr>`;
+  recurringCache = rows;
+  $("recurring-table").innerHTML = rows.length ? rows.map((r) => `<tr><td>${escapeHtml(r.category)}</td><td>${escapeHtml(r.description || "")}</td><td>${escapeHtml(r.account_name || "Main Account")}</td><td class="${r.type}">${r.type}</td><td class="amount ${r.type}">${money(r.amount)}</td><td>${r.frequency}</td><td>${r.next_date}</td><td><div class="row-actions"><button class="ghost" onclick="editRecurring(${r.id})">Edit</button><button class="ghost" onclick="removeRecurring(${r.id})">Delete</button></div></td></tr>`).join("") : `<tr><td colspan="8">No recurring transactions.</td></tr>`;
 }
 async function removeRecurring(id) { if (!confirm("Deactivate this recurring transaction?")) return; await api(`/api/recurring/${id}`, { method: "DELETE" }); toast("Recurring transaction deactivated"); await refresh(); }
 
-async function openRecurringModal() {
+async function openRecurringModal(recurring = null) {
   await loadCategories();
-  $("recurring-date").value = new Date().toISOString().slice(0, 10);
-  $("recurring-type").value = "expense";
-  $("recurring-category").value = "";
-  $("recurring-amount").value = "";
-  $("recurring-frequency").value = "monthly";
-  $("recurring-description").value = "";
+  $("recurring-id").value = recurring?.id || "";
+  $("recurring-modal-title").textContent = recurring ? "Edit recurring transaction" : "Add recurring transaction";
+  $("recurring-date-label").firstChild.textContent = recurring ? "Next date" : "Start date";
+  $("recurring-date").value = recurring?.next_date || new Date().toISOString().slice(0, 10);
+  $("recurring-type").value = recurring?.type || "expense";
+  $("recurring-category").value = recurring?.category || "";
+  $("recurring-amount").value = recurring?.amount || "";
+  $("recurring-frequency").value = recurring?.frequency || "monthly";
+  $("recurring-description").value = recurring?.description || "";
+  if (recurring?.account_id) $("recurring-account").value = recurring.account_id;
   $("recurring-modal").classList.remove("hidden");
+}
+
+function editRecurring(id) {
+  const recurring = recurringCache.find((row) => row.id === id);
+  if (recurring) openRecurringModal(recurring);
 }
 
 async function saveRecurring(event) {
   event.preventDefault();
+  const id = $("recurring-id").value;
   const payload = {
-    start_date: $("recurring-date").value,
     type: $("recurring-type").value,
     category: $("recurring-category").value,
     amount: Number($("recurring-amount").value),
@@ -175,36 +185,45 @@ async function saveRecurring(event) {
     description: $("recurring-description").value,
     account_id: Number($("recurring-account").value),
   };
-  await api("/api/recurring", { method: "POST", body: JSON.stringify(payload) });
+  payload[id ? "next_date" : "start_date"] = $("recurring-date").value;
+  await api(id ? `/api/recurring/${id}` : "/api/recurring", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) });
   $("recurring-modal").classList.add("hidden");
-  toast("Recurring transaction added");
+  toast(id ? "Recurring transaction updated" : "Recurring transaction added");
   await refresh();
 }
 
-async function loadBudgets() { const budgets = await api("/api/budgets"); renderBudgets(budgets, $("budgets-full"), true); }
+async function loadBudgets() { budgetsCache = await api("/api/budgets"); renderBudgets(budgetsCache, $("budgets-full"), true); }
 function renderBudgets(budgets, target, cards = false) { if (!budgets.length) { target.innerHTML = "<p>No budgets configured.</p>"; return; } target.innerHTML = budgets.map((b) => cards ? budgetCard(b) : budgetItem(b)).join(""); }
 function budgetItem(b) { const cls = b.percentage >= 100 ? "danger" : b.percentage >= 80 ? "warn" : ""; return `<div class="budget-item"><div class="budget-top"><strong>${escapeHtml(b.category)}</strong><span>${money(b.spent)} / ${money(b.monthly_limit)}</span></div><div class="progress"><span class="${cls}" style="width:${Math.min(100, b.percentage)}%"></span></div></div>`; }
-function budgetCard(b) { const cls = b.percentage >= 100 ? "danger" : b.percentage >= 80 ? "warn" : ""; return `<div class="budget-card"><div class="budget-top"><strong>${escapeHtml(b.category)}</strong><button class="ghost" onclick="removeBudget(${b.id})">Delete</button></div><p>${money(b.spent)} spent of ${money(b.monthly_limit)}</p><div class="progress"><span class="${cls}" style="width:${Math.min(100, b.percentage)}%"></span></div><small>${b.percentage}% used</small></div>`; }
+function budgetCard(b) { const cls = b.percentage >= 100 ? "danger" : b.percentage >= 80 ? "warn" : ""; return `<div class="budget-card"><div class="budget-top"><strong>${escapeHtml(b.category)}</strong><div class="row-actions"><button class="ghost" onclick="editBudget(${b.id})">Edit</button><button class="ghost" onclick="removeBudget(${b.id})">Delete</button></div></div><p>${money(b.spent)} spent of ${money(b.monthly_limit)}</p><div class="progress"><span class="${cls}" style="width:${Math.min(100, b.percentage)}%"></span></div><small>${b.percentage}% used</small></div>`; }
 async function removeBudget(id) { if (!confirm("Delete this budget?")) return; await api(`/api/budgets/${id}`, { method: "DELETE" }); toast("Budget deleted"); await refresh(); }
 
-async function openBudgetModal() {
+async function openBudgetModal(budget = null) {
   await loadCategories();
-  $("budget-category").value = "";
-  $("budget-limit").value = "";
+  $("budget-id").value = budget?.id || "";
+  $("budget-modal-title").textContent = budget ? "Edit budget" : "Add budget";
+  $("budget-category").value = budget?.category || "";
+  $("budget-limit").value = budget?.monthly_limit || "";
   $("budget-modal").classList.remove("hidden");
+}
+
+function editBudget(id) {
+  const budget = budgetsCache.find((row) => row.id === id);
+  if (budget) openBudgetModal(budget);
 }
 
 async function saveBudget(event) {
   event.preventDefault();
-  await api("/api/budgets", {
-    method: "POST",
+  const id = $("budget-id").value;
+  await api(id ? `/api/budgets/${id}` : "/api/budgets", {
+    method: id ? "PUT" : "POST",
     body: JSON.stringify({
       category: $("budget-category").value,
       monthly_limit: Number($("budget-limit").value),
     }),
   });
   $("budget-modal").classList.add("hidden");
-  toast("Budget saved");
+  toast(id ? "Budget updated" : "Budget saved");
   await refresh();
 }
 
@@ -286,7 +305,10 @@ function parseCsv(text) {
 function rowToTransaction(headers, values) {
   const row = Object.fromEntries(headers.map((header, index) => [header.trim().toLowerCase(), values[index]?.trim() || ""]));
   const accountName = row.account_name || row.account;
-  const account = accountName ? accountsCache.find((a) => a.name.toLowerCase() === accountName.toLowerCase()) : null;
+  const accountId = Number(row.account_id);
+  const account = row.account_id
+    ? accountsCache.find((item) => item.id === accountId)
+    : accountsCache.find((item) => item.name.toLowerCase() === (accountName || "Main Account").toLowerCase());
   const payload = {
     date: row.date,
     type: row.type.toLowerCase(),
@@ -294,12 +316,39 @@ function rowToTransaction(headers, values) {
     amount: Number(row.amount),
     description: row.description || "",
   };
-  if (row.account_id) payload.account_id = Number(row.account_id);
+  if (row.account_id) payload.account_id = accountId;
   else if (account) payload.account_id = account.id;
-  return payload;
+  return { payload, accountName: account?.name || accountName || "Main Account", accountFound: Boolean(account) };
 }
 
-async function importTransactionsCsv(event) {
+function transactionKey(transaction) {
+  return [transaction.date, transaction.type, Number(transaction.amount).toFixed(2), String(transaction.description || "").trim().toLowerCase(), transaction.account_id || "main"].join("|");
+}
+
+function validateCsvTransaction(mapped) {
+  const errors = [];
+  const { payload } = mapped;
+  const parsedDate = new Date(`${payload.date}T00:00:00`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(payload.date) || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== payload.date) errors.push("Invalid date");
+  if (!["income", "expense"].includes(payload.type)) errors.push("Type must be income or expense");
+  if (!payload.category.trim()) errors.push("Category is required");
+  if (!Number.isFinite(payload.amount) || payload.amount <= 0) errors.push("Amount must be positive");
+  if (!mapped.accountFound) errors.push("Account was not found");
+  return errors;
+}
+
+async function fetchAllTransactions() {
+  const items = [];
+  let offset = 0;
+  while (true) {
+    const data = await api(`/api/transactions?limit=500&offset=${offset}`);
+    items.push(...data.items);
+    if (items.length >= data.total || data.items.length === 0) return items;
+    offset += data.items.length;
+  }
+}
+
+async function prepareCsvPreview(event) {
   const file = event.target.files?.[0];
   event.target.value = "";
   if (!file) return;
@@ -318,14 +367,74 @@ async function importTransactionsCsv(event) {
     return;
   }
 
+  const existingKeys = new Set((await fetchAllTransactions()).map(transactionKey));
+  const fileKeys = new Set();
+  csvPreviewRows = rows.slice(1).map((values, index) => {
+    const mapped = rowToTransaction(headers, values);
+    const errors = validateCsvTransaction(mapped);
+    const key = transactionKey(mapped.payload);
+    const duplicate = errors.length === 0 && (existingKeys.has(key) || fileKeys.has(key));
+    if (!duplicate && errors.length === 0) fileKeys.add(key);
+    return { ...mapped, rowNumber: index + 2, errors, status: errors.length ? "invalid" : duplicate ? "duplicate" : "valid" };
+  });
+  renderCsvPreview();
+  $("csv-preview-modal").classList.remove("hidden");
+}
+
+function renderCsvPreview() {
+  const counts = { valid: 0, invalid: 0, duplicate: 0 };
+  csvPreviewRows.forEach((row) => { counts[row.status] += 1; });
+  $("csv-valid-count").textContent = counts.valid;
+  $("csv-invalid-count").textContent = counts.invalid;
+  $("csv-duplicate-count").textContent = counts.duplicate;
+  $("confirm-csv-import-btn").textContent = `Import ${counts.valid} valid row${counts.valid === 1 ? "" : "s"}`;
+  $("confirm-csv-import-btn").disabled = counts.valid === 0;
+  $("csv-preview-table").innerHTML = csvPreviewRows.map((row) => {
+    const detail = row.errors.length ? row.errors.join(", ") : row.status === "duplicate" ? "Matches an existing or earlier CSV row" : "Ready to import";
+    return `<tr class="row-${row.status}" title="${escapeAttr(detail)}"><td><span class="status ${row.status}">${row.status}</span></td><td>${escapeHtml(row.payload.date)}</td><td>${escapeHtml(row.accountName)}</td><td>${escapeHtml(row.payload.category)}</td><td>${escapeHtml(row.payload.description)}</td><td>${escapeHtml(row.payload.type)}</td><td class="amount">${Number.isFinite(row.payload.amount) ? money(row.payload.amount) : "Invalid"}</td></tr>`;
+  }).join("");
+}
+
+function closeCsvPreview() {
+  csvPreviewRows = [];
+  $("csv-preview-modal").classList.add("hidden");
+}
+
+async function confirmCsvImport() {
+  const rows = csvPreviewRows.filter((row) => row.status === "valid");
   let imported = 0;
-  for (const values of rows.slice(1)) {
-    const payload = rowToTransaction(headers, values);
-    await api("/api/transactions", { method: "POST", body: JSON.stringify(payload) });
-    imported += 1;
+  for (const row of rows) {
+    try {
+      await api("/api/transactions", { method: "POST", body: JSON.stringify(row.payload) });
+      imported += 1;
+    } catch (error) {
+      row.status = "invalid";
+      row.errors = [error.message];
+    }
   }
+  closeCsvPreview();
   toast(`${imported} transaction${imported === 1 ? "" : "s"} imported`);
   await refresh();
+}
+
+async function loadReports() {
+  const data = await api(`/api/reports/monthly?months=${encodeURIComponent($("report-months").value)}`);
+  $("report-income").textContent = money(data.summary.income);
+  $("report-expenses").textContent = money(data.summary.expenses);
+  $("report-net").textContent = money(data.summary.net);
+  $("report-savings").textContent = `${data.summary.savings_rate}%`;
+  renderReportCharts(data);
+}
+
+function renderReportCharts(data) {
+  const labels = data.months.map((row) => row.month);
+  if (monthlyChart) monthlyChart.destroy();
+  monthlyChart = new Chart($("monthly-chart"), { type: "bar", data: { labels, datasets: [{ label: "Income", data: data.months.map((row) => row.income), backgroundColor: "#15966d" }, { label: "Expenses", data: data.months.map((row) => row.expenses), backgroundColor: "#d94b58" }] }, options: { responsive: true, scales: { y: { beginAtZero: true, ticks: { callback: (value) => money(value) } } } } });
+  if (categoryTrendChart) categoryTrendChart.destroy();
+  const colors = ["#3b63f3", "#15966d", "#d94b58", "#e7a62b", "#725ac1"];
+  categoryTrendChart = new Chart($("category-trend-chart"), { type: "line", data: { labels, datasets: data.category_trends.map((series, index) => ({ label: series.category, data: series.totals, borderColor: colors[index % colors.length], backgroundColor: colors[index % colors.length], tension: .3 })) }, options: { responsive: true, scales: { y: { beginAtZero: true, ticks: { callback: (value) => money(value) } } } } });
+  if (netWorthChart) netWorthChart.destroy();
+  netWorthChart = new Chart($("net-worth-chart"), { type: "line", data: { labels, datasets: [{ label: "Balance", data: data.months.map((row) => row.balance), borderColor: "#3b63f3", backgroundColor: "rgba(59, 99, 243, .12)", fill: true, tension: .3 }] }, options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: (value) => money(value) } } } } });
 }
 
 async function refresh() {
@@ -334,6 +443,7 @@ async function refresh() {
   if (visible === "transactions-view") await loadTransactions();
   if (visible === "recurring-view") await loadRecurring();
   if (visible === "budgets-view") await loadBudgets();
+  if (visible === "reports-view") await loadReports();
   if (visible === "accounts-view") await loadAccounts();
   if (visible === "transfers-view") await loadTransfers();
 }
@@ -350,17 +460,21 @@ $("filter-btn").addEventListener("click", loadTransactions);
 $("dashboard-days").addEventListener("change", loadDashboard);
 $("export-csv-btn").addEventListener("click", exportTransactionsCsv);
 $("import-csv-btn").addEventListener("click", () => $("csv-import-file").click());
-$("csv-import-file").addEventListener("change", importTransactionsCsv);
+$("csv-import-file").addEventListener("change", prepareCsvPreview);
+$("close-csv-preview-modal").addEventListener("click", closeCsvPreview);
+$("cancel-csv-import-btn").addEventListener("click", closeCsvPreview);
+$("confirm-csv-import-btn").addEventListener("click", confirmCsvImport);
+$("report-months").addEventListener("change", loadReports);
 $("add-account-btn").addEventListener("click", openAccountModal);
 $("close-account-modal").addEventListener("click", () => $("account-modal").classList.add("hidden"));
 $("account-form").addEventListener("submit", saveAccount);
 $("add-transfer-btn").addEventListener("click", openTransferModal);
 $("close-transfer-modal").addEventListener("click", () => $("transfer-modal").classList.add("hidden"));
 $("transfer-form").addEventListener("submit", saveTransfer);
-$("add-recurring-btn").addEventListener("click", openRecurringModal);
+$("add-recurring-btn").addEventListener("click", () => openRecurringModal());
 $("close-recurring-modal").addEventListener("click", () => $("recurring-modal").classList.add("hidden"));
 $("recurring-form").addEventListener("submit", saveRecurring);
-$("add-budget-btn").addEventListener("click", openBudgetModal);
+$("add-budget-btn").addEventListener("click", () => openBudgetModal());
 $("close-budget-modal").addEventListener("click", () => $("budget-modal").classList.add("hidden"));
 $("budget-form").addEventListener("submit", saveBudget);
 

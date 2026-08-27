@@ -15,6 +15,7 @@ from .services.finance_service import FinanceService
 async def lifespan(app: FastAPI):
     database = FinanceDatabase(settings.database_path)
     repository = FinanceRepository(database)
+    repository.process_recurring_transactions()
     app.state.database = database
     app.state.finance_service = FinanceService(repository)
     try:

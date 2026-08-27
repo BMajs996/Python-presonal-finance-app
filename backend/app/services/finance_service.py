@@ -1,77 +1,90 @@
+from .account_service import AccountService
+from .budget_service import BudgetService
+from .recurring_service import RecurringService
+from .report_service import ReportService
+from .transaction_service import TransactionService
+from .transfer_service import TransferService
+
+
 class FinanceService:
-    """Application/business layer. Keeps HTTP concerns out of persistence."""
+    """Compatibility facade used by the existing API routes."""
 
     def __init__(self, repository):
-        self.repository = repository
+        self.accounts_service = AccountService(repository.accounts)
+        self.budgets_service = BudgetService(repository.budgets)
+        self.recurring_service = RecurringService(repository.recurring_transactions)
+        self.reports_service = ReportService(repository.reports)
+        self.transactions_service = TransactionService(repository.transactions)
+        self.transfers_service = TransferService(repository.transfers)
 
     def dashboard(self, days: int = 30):
-        return self.repository.dashboard(days)
+        return self.reports_service.dashboard(days)
 
     def list_transactions(self, **filters):
-        return self.repository.list_transactions(**filters)
+        return self.transactions_service.list(**filters)
 
     def create_transaction(self, payload):
-        return self.repository.add_transaction(payload)
+        return self.transactions_service.create(payload)
 
     def get_transaction(self, transaction_id: int):
-        return self.repository.get_transaction(transaction_id)
+        return self.transactions_service.get(transaction_id)
 
     def update_transaction(self, transaction_id: int, payload):
-        return self.repository.update_transaction(transaction_id, payload)
+        return self.transactions_service.update(transaction_id, payload)
 
     def delete_transaction(self, transaction_id: int):
-        return self.repository.delete_transaction(transaction_id)
+        return self.transactions_service.delete(transaction_id)
 
     def categories(self):
-        return self.repository.categories()
+        return self.transactions_service.categories()
 
     def accounts(self):
-        return self.repository.list_accounts()
+        return self.accounts_service.list()
 
     def get_account(self, account_id: int):
-        return self.repository.get_account(account_id)
+        return self.accounts_service.get(account_id)
 
     def create_account(self, payload):
-        return self.repository.add_account(payload)
+        return self.accounts_service.create(payload)
 
     def deactivate_account(self, account_id: int):
-        return self.repository.deactivate_account(account_id)
+        return self.accounts_service.deactivate(account_id)
 
     def transfers(self, **filters):
-        return self.repository.list_transfers(**filters)
+        return self.transfers_service.list(**filters)
 
     def get_transfer(self, transfer_id: int):
-        return self.repository.get_transfer(transfer_id)
+        return self.transfers_service.get(transfer_id)
 
     def create_transfer(self, payload):
-        return self.repository.add_transfer(payload)
+        return self.transfers_service.create(payload)
 
     def delete_transfer(self, transfer_id: int):
-        return self.repository.delete_transfer(transfer_id)
+        return self.transfers_service.delete(transfer_id)
 
     def recurring(self):
-        return self.repository.recurring()
+        return self.recurring_service.list()
 
     def create_recurring(self, payload):
-        return self.repository.add_recurring(payload)
-
-    def delete_recurring(self, recurring_id: int):
-        return self.repository.delete_recurring(recurring_id)
+        return self.recurring_service.create(payload)
 
     def update_recurring(self, recurring_id: int, payload):
-        return self.repository.update_recurring(recurring_id, payload)
+        return self.recurring_service.update(recurring_id, payload)
+
+    def delete_recurring(self, recurring_id: int):
+        return self.recurring_service.deactivate(recurring_id)
 
     def budgets(self):
-        return self.repository.get_budget_usage()
+        return self.budgets_service.list()
 
     def create_budget(self, payload):
-        return self.repository.add_budget(payload)
+        return self.budgets_service.create(payload)
 
     def update_budget(self, budget_id: int, payload):
-        return self.repository.update_budget(budget_id, payload)
+        return self.budgets_service.update(budget_id, payload)
 
     def delete_budget(self, budget_id: int):
-        return self.repository.delete_budget(budget_id)
+        return self.budgets_service.delete(budget_id)
 
     def monthly_report(self, months: int = 12):
-        return self.repository.monthly_report(months)
+        return self.reports_service.monthly(months)

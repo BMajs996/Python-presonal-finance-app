@@ -1,6 +1,6 @@
 from datetime import date
 
-from app.database import add_months, calculate_next_date
+from app.domain.recurrence import add_months, calculate_next_date
 
 
 def test_add_months_handles_end_of_month():
@@ -229,9 +229,18 @@ def test_recurring_transaction_catches_up_missed_occurrences(db):
 
     assert recurring["active"] == 1
 
-    # The recurring entry itself is scheduled for the month after its
-    # configured start date. Verify the record exists and has a valid date.
     assert recurring["next_date"] == "2026-02-01"
+
+    db.recurring_transactions.process_due(through=date(2026, 4, 1))
+
+    transactions, total = db.list_transactions()
+    assert total == 3
+    assert {row["date"] for row in transactions} == {
+        "2026-02-01",
+        "2026-03-01",
+        "2026-04-01",
+    }
+    assert db.recurring()[0]["next_date"] == "2026-05-01"
 
 
 def test_update_recurring_transaction(db):
@@ -292,6 +301,8 @@ def test_monthly_report(db):
     assert report["summary"]["expenses"] == 600
     assert report["summary"]["savings_rate"] == 80
     assert report["top_categories"][0] == {"category": "Food", "total": 600}
+    assert report["category_trends"][0]["category"] == "Food"
+    assert report["category_trends"][0]["totals"][-1] == 600
 
 
 def test_categories_are_unique(db):
@@ -323,6 +334,7 @@ def test_legacy_database_is_migrated_without_changing_balance(tmp_path):
     import sqlite3
 
     from app.database import FinanceDatabase
+    from app.repositories.finance_repository import FinanceRepository
 
     legacy_path = tmp_path / "legacy.db"
     conn = sqlite3.connect(legacy_path)
@@ -363,6 +375,7 @@ def test_legacy_database_is_migrated_without_changing_balance(tmp_path):
     conn.close()
 
     database = FinanceDatabase(legacy_path)
+    repository = FinanceRepository(database)
     try:
         assert database.conn.execute(
             "SELECT MAX(version) FROM schema_migrations"
@@ -373,7 +386,7 @@ def test_legacy_database_is_migrated_without_changing_balance(tmp_path):
         assert database.conn.execute(
             "SELECT COUNT(*) FROM transactions WHERE account_id IS NOT NULL"
         ).fetchone()[0] == 2
-        assert database.dashboard()["balance"] == 900
+        assert repository.dashboard()["balance"] == 900
     finally:
         database.close()
 
@@ -450,7 +463,7 @@ def test_transaction_defaults_to_main_account(db):
 def test_transfer_cannot_use_same_account(db):
     from app.schemas import TransferCreate
 
-    main_id = db._default_account_id()
+    main_id = db.accounts.default_account_id()
     try:
         db.add_transfer(
             TransferCreate(

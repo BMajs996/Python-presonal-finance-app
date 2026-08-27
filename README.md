@@ -40,9 +40,10 @@ finance-dashboard/
 │   ├── app/
 │   │   ├── api/              # HTTP routes
 │   │   ├── core/             # configuration
-│   │   ├── repositories/     # persistence boundary
-│   │   ├── services/         # business logic
-│   │   ├── database.py       # SQLite implementation
+│   │   ├── domain/           # framework-free business rules
+│   │   ├── repositories/     # feature-owned SQLite queries
+│   │   ├── services/         # feature-owned application logic
+│   │   ├── database.py       # connection and schema lifecycle
 │   │   ├── migrations.py     # versioned schema migrations
 │   │   ├── schemas.py        # Pydantic request models
 │   │   └── main.py           # FastAPI application
@@ -70,10 +71,13 @@ Useful endpoints:
 - `DELETE /api/transactions/{id}`
 - `GET /api/recurring`
 - `POST /api/recurring`
+- `PUT /api/recurring/{id}`
 - `DELETE /api/recurring/{id}`
 - `GET /api/budgets`
 - `POST /api/budgets`
+- `PUT /api/budgets/{id}`
 - `DELETE /api/budgets/{id}`
+- `GET /api/reports/monthly`
 - `GET /api/categories`
 - `GET /api/accounts`
 - `POST /api/accounts`
@@ -97,13 +101,17 @@ git push -u origin main
 
 ## Architecture
 
-The backend is now separated into four layers:
+The backend is separated into focused layers:
 
 - `api/` — HTTP routes and request/response concerns
-- `services/` — application/business logic
-- `repositories/` — persistence boundary
-- `database.py` — SQLite implementation kept compatible with the existing database
+- `services/` — application logic grouped by feature
+- `repositories/` — SQLite persistence grouped by feature
+- `domain/` — framework-free rules such as recurrence date calculations
+- `database.py` — SQLite connection, schema initialization, and migration lifecycle
 - `core/config.py` — environment-driven configuration
+
+`FinanceService` and `FinanceRepository` remain as compatibility facades for the current API routes. New
+feature code should depend on the focused service or repository instead of adding more methods to those facades.
 
 The application uses FastAPI's lifespan API for database startup/shutdown instead of the deprecated `on_event` hooks.
 
