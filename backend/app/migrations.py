@@ -5,16 +5,19 @@ existing desktop-era database without requiring a separate migration command.
 """
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-LATEST_SCHEMA_VERSION = 1
+LATEST_SCHEMA_VERSION = 2
 
 
 def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     return any(row[1] == column for row in conn.execute(f"PRAGMA table_info({table})"))
 
 
-def _migration_1_accounts_and_transfers(conn: sqlite3.Connection) -> None:
+def _migration_1_accounts_and_transfers(
+    conn: sqlite3.Connection,
+    base_currency: str,
+) -> None:
     """Add accounts/transfers while preserving every legacy transaction."""
     conn.executescript(
         """
@@ -60,9 +63,9 @@ def _migration_1_accounts_and_transfers(conn: sqlite3.Connection) -> None:
         cur = conn.execute(
             """
             INSERT INTO accounts(name, type, currency, opening_balance, active, created_at)
-            VALUES ('Main Account', 'checking', 'USD', 0, 1, ?)
+            VALUES ('Main Account', 'checking', ?, 0, 1, ?)
             """,
-            (datetime.now(timezone.utc).isoformat(),),
+            (base_currency, datetime.now(UTC).isoformat()),
         )
         default_account_id = cur.lastrowid
     else:
@@ -95,7 +98,31 @@ def _migration_1_accounts_and_transfers(conn: sqlite3.Connection) -> None:
     )
 
 
-def migrate(conn: sqlite3.Connection) -> int:
+def _migration_2_integer_money(
+    conn: sqlite3.Connection,
+    _base_currency: str,
+) -> None:
+    """Add exact integer-cent columns while retaining legacy REAL columns."""
+    money_columns = (
+        ("transactions", "amount", "amount_cents"),
+        ("recurring_transactions", "amount", "amount_cents"),
+        ("budgets", "monthly_limit", "monthly_limit_cents"),
+        ("accounts", "opening_balance", "opening_balance_cents"),
+        ("transfers", "amount", "amount_cents"),
+    )
+    for table, legacy_column, cents_column in money_columns:
+        if not _column_exists(conn, table, cents_column):
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {cents_column} INTEGER")
+        conn.execute(
+            f"""
+            UPDATE {table}
+            SET {cents_column}=CAST(ROUND(COALESCE({legacy_column}, 0) * 100) AS INTEGER)
+            WHERE {cents_column} IS NULL
+            """
+        )
+
+
+def migrate(conn: sqlite3.Connection, base_currency: str = "USD") -> int:
     """Apply all migrations and return the resulting schema version."""
     conn.execute(
         """
@@ -108,14 +135,17 @@ def migrate(conn: sqlite3.Connection) -> int:
 
     current = conn.execute("SELECT COALESCE(MAX(version), 0) FROM schema_migrations").fetchone()[0]
 
-    migrations = {1: _migration_1_accounts_and_transfers}
+    migrations = {
+        1: _migration_1_accounts_and_transfers,
+        2: _migration_2_integer_money,
+    }
     for version in range(current + 1, LATEST_SCHEMA_VERSION + 1):
         migration = migrations[version]
         with conn:
-            migration(conn)
+            migration(conn, base_currency)
             conn.execute(
                 "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
-                (version, datetime.now(timezone.utc).isoformat()),
+                (version, datetime.now(UTC).isoformat()),
             )
 
     return LATEST_SCHEMA_VERSION

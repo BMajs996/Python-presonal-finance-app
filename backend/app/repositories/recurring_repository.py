@@ -1,5 +1,6 @@
 from datetime import date
 
+from ..domain.money import Money
 from ..domain.recurrence import calculate_next_date
 from .base_repository import BaseRepository
 
@@ -7,10 +8,10 @@ from .base_repository import BaseRepository
 class RecurringRepository(BaseRepository):
     def list(self):
         return [
-            dict(row)
+            self._serialize(row)
             for row in self.conn.execute(
                 """
-                SELECT r.*, a.name AS account_name
+                SELECT r.*, a.name AS account_name, a.currency AS account_currency
                 FROM recurring_transactions r
                 LEFT JOIN accounts a ON a.id=r.account_id
                 WHERE r.active=1 ORDER BY r.next_date
@@ -21,29 +22,32 @@ class RecurringRepository(BaseRepository):
     def get(self, recurring_id: int):
         row = self.conn.execute(
             """
-            SELECT r.*, a.name AS account_name
+            SELECT r.*, a.name AS account_name, a.currency AS account_currency
             FROM recurring_transactions r
             LEFT JOIN accounts a ON a.id=r.account_id
             WHERE r.id=?
             """,
             (recurring_id,),
         ).fetchone()
-        return dict(row) if row else None
+        return self._serialize(row) if row else None
 
     def add(self, payload):
         account_id = self.resolve_account_id(payload.account_id)
+        amount = Money.from_amount(payload.amount, self.account_currency(account_id))
         next_date = calculate_next_date(payload.frequency, payload.start_date)
         with self.conn:
             cursor = self.conn.execute(
                 """
                 INSERT INTO recurring_transactions
-                    (type, category, amount, description, frequency, next_date, active, account_id)
-                VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                    (type, category, amount, amount_cents, description, frequency,
+                     next_date, active, account_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
                 """,
                 (
                     payload.type,
                     payload.category.strip(),
-                    payload.amount,
+                    amount.as_float(),
+                    amount.cents,
                     payload.description.strip(),
                     payload.frequency,
                     next_date.isoformat(),
@@ -59,17 +63,20 @@ class RecurringRepository(BaseRepository):
         ).fetchone():
             return None
         account_id = self.resolve_account_id(payload.account_id)
+        amount = Money.from_amount(payload.amount, self.account_currency(account_id))
         with self.conn:
             self.conn.execute(
                 """
                 UPDATE recurring_transactions
-                SET type=?, category=?, amount=?, description=?, frequency=?, next_date=?, account_id=?
+                SET type=?, category=?, amount=?, amount_cents=?, description=?,
+                    frequency=?, next_date=?, account_id=?
                 WHERE id=?
                 """,
                 (
                     payload.type,
                     payload.category.strip(),
-                    payload.amount,
+                    amount.as_float(),
+                    amount.cents,
                     payload.description.strip(),
                     payload.frequency,
                     payload.next_date.isoformat(),
@@ -90,7 +97,8 @@ class RecurringRepository(BaseRepository):
         through = through or date.today()
         rows = self.conn.execute(
             """
-            SELECT id, type, category, amount, description, frequency, next_date, account_id
+            SELECT id, type, category, amount, amount_cents, description,
+                   frequency, next_date, account_id
             FROM recurring_transactions
             WHERE active=1 AND next_date <= ?
             ORDER BY next_date, id
@@ -106,14 +114,15 @@ class RecurringRepository(BaseRepository):
                     self.conn.execute(
                         """
                         INSERT INTO transactions
-                            (date, type, category, amount, description, account_id)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                            (date, type, category, amount, amount_cents, description, account_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             occurrence.isoformat(),
                             row["type"],
                             row["category"],
                             row["amount"],
+                            row["amount_cents"],
                             f'{row["description"]} (Auto)'.strip(),
                             row["account_id"] or self.default_account_id(),
                         ),
@@ -129,3 +138,13 @@ class RecurringRepository(BaseRepository):
                     "UPDATE recurring_transactions SET next_date=? WHERE id=?",
                     (occurrence.isoformat(), row["id"]),
                 )
+
+    @staticmethod
+    def _serialize(row):
+        amount = Money(row["amount_cents"], row["account_currency"])
+        result = dict(row)
+        result["amount"] = amount.as_float()
+        result["currency"] = amount.currency
+        result.pop("amount_cents", None)
+        result.pop("account_currency", None)
+        return result

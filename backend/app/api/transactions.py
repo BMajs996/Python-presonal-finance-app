@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from .dependencies import get_finance_service
@@ -14,21 +16,24 @@ def list_transactions(
     category: str = "",
     type_: str = Query(default="", alias="type"),
     account_id: int | None = Query(default=None, gt=0),
-    date_start: str = "",
-    date_end: str = "",
+    date_start: date | None = None,
+    date_end: date | None = None,
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ):
-    rows, total = service.list_transactions(
-        search=search,
-        category=category,
-        type_=type_,
-        account_id=account_id,
-        date_start=date_start,
-        date_end=date_end,
-        limit=limit,
-        offset=offset,
-    )
+    try:
+        rows, total = service.list_transactions(
+            search=search,
+            category=category,
+            type_=type_,
+            account_id=account_id,
+            date_start=date_start,
+            date_end=date_end,
+            limit=limit,
+            offset=offset,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"items": rows, "total": total}
 
 

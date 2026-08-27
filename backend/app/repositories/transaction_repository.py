@@ -1,3 +1,7 @@
+from datetime import date
+
+from ..domain.money import Money
+from ..domain.transaction import Transaction
 from .base_repository import BaseRepository
 
 
@@ -14,7 +18,7 @@ class TransactionRepository(BaseRepository):
         offset: int = 0,
     ):
         query = """
-            SELECT t.*, a.name AS account_name
+            SELECT t.*, a.name AS account_name, a.currency AS account_currency
             FROM transactions t
             LEFT JOIN accounts a ON a.id=t.account_id
             WHERE 1=1
@@ -42,33 +46,37 @@ class TransactionRepository(BaseRepository):
         total = self.conn.execute(f"SELECT COUNT(*) FROM ({query})", params).fetchone()[0]
         query += " ORDER BY t.date DESC, t.id DESC LIMIT ? OFFSET ?"
         rows = self.conn.execute(query, [*params, limit, offset]).fetchall()
-        return [dict(row) for row in rows], total
+        return [self._to_domain(row).to_dict() for row in rows], total
 
     def get(self, transaction_id: int):
         row = self.conn.execute(
             """
-            SELECT t.*, a.name AS account_name
+            SELECT t.*, a.name AS account_name, a.currency AS account_currency
             FROM transactions t
             LEFT JOIN accounts a ON a.id=t.account_id
             WHERE t.id=?
             """,
             (transaction_id,),
         ).fetchone()
-        return dict(row) if row else None
+        return self._to_domain(row).to_dict() if row else None
 
     def add(self, payload):
         account_id = self.resolve_account_id(payload.account_id)
+        amount = Money.from_amount(payload.amount, self.account_currency(account_id))
         with self.conn:
             cursor = self.conn.execute(
                 """
-                INSERT INTO transactions(date, type, category, amount, description, account_id)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO transactions(
+                    date, type, category, amount, amount_cents, description, account_id
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     payload.date.isoformat(),
                     payload.type,
                     payload.category.strip(),
-                    payload.amount,
+                    amount.as_float(),
+                    amount.cents,
                     payload.description.strip(),
                     account_id,
                 ),
@@ -84,18 +92,20 @@ class TransactionRepository(BaseRepository):
             if payload.account_id is not None
             else existing["account_id"]
         )
+        amount = Money.from_amount(payload.amount, self.account_currency(account_id))
         with self.conn:
             self.conn.execute(
                 """
                 UPDATE transactions
-                SET date=?, type=?, category=?, amount=?, description=?, account_id=?
+                SET date=?, type=?, category=?, amount=?, amount_cents=?, description=?, account_id=?
                 WHERE id=?
                 """,
                 (
                     payload.date.isoformat(),
                     payload.type,
                     payload.category.strip(),
-                    payload.amount,
+                    amount.as_float(),
+                    amount.cents,
                     payload.description.strip(),
                     account_id,
                     transaction_id,
@@ -114,3 +124,16 @@ class TransactionRepository(BaseRepository):
                 "SELECT DISTINCT category FROM transactions ORDER BY category"
             )
         ]
+
+    @staticmethod
+    def _to_domain(row) -> Transaction:
+        return Transaction(
+            id=row["id"],
+            date=date.fromisoformat(row["date"]),
+            type=row["type"],
+            category=row["category"],
+            amount=Money(row["amount_cents"], row["account_currency"]),
+            description=row["description"] or "",
+            account_id=row["account_id"],
+            account_name=row["account_name"] or "Main Account",
+        )

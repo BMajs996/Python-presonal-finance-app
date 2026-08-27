@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -12,7 +13,7 @@ class TransactionCreate(BaseModel):
     date: date
     type: TransactionType
     category: str = Field(min_length=1, max_length=100)
-    amount: float = Field(gt=0)
+    amount: Decimal = Field(gt=0, decimal_places=2)
     description: str = Field(default="", max_length=500)
     account_id: int | None = Field(default=None, gt=0)
 
@@ -32,7 +33,7 @@ class TransactionUpdate(TransactionCreate):
 class RecurringCreate(BaseModel):
     type: TransactionType
     category: str = Field(min_length=1, max_length=100)
-    amount: float = Field(gt=0)
+    amount: Decimal = Field(gt=0, decimal_places=2)
     description: str = Field(default="", max_length=500)
     frequency: Frequency
     start_date: date
@@ -50,7 +51,7 @@ class RecurringCreate(BaseModel):
 class RecurringUpdate(BaseModel):
     type: TransactionType
     category: str = Field(min_length=1, max_length=100)
-    amount: float = Field(gt=0)
+    amount: Decimal = Field(gt=0, decimal_places=2)
     description: str = Field(default="", max_length=500)
     frequency: Frequency
     next_date: date
@@ -67,7 +68,7 @@ class RecurringUpdate(BaseModel):
 
 class BudgetCreate(BaseModel):
     category: str = Field(min_length=1, max_length=100)
-    monthly_limit: float = Field(gt=0)
+    monthly_limit: Decimal = Field(gt=0, decimal_places=2)
 
 
 class BudgetUpdate(BudgetCreate):
@@ -78,7 +79,7 @@ class AccountCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     type: AccountType = "checking"
     currency: str = Field(default="USD", min_length=3, max_length=3)
-    opening_balance: float = 0
+    opening_balance: Decimal = Field(default=Decimal("0"), decimal_places=2)
 
     @field_validator("name")
     @classmethod
@@ -91,14 +92,17 @@ class AccountCreate(BaseModel):
     @field_validator("currency")
     @classmethod
     def clean_currency(cls, value: str) -> str:
-        return value.strip().upper()
+        value = value.strip().upper()
+        if not value.isalpha():
+            raise ValueError("Currency must be a three-letter ISO code")
+        return value
 
 
 class TransferCreate(BaseModel):
     date: date
     from_account_id: int = Field(gt=0)
     to_account_id: int = Field(gt=0)
-    amount: float = Field(gt=0)
+    amount: Decimal = Field(gt=0, decimal_places=2)
     description: str = Field(default="", max_length=500)
 
 
@@ -108,6 +112,7 @@ class TransactionResponse(BaseModel):
     type: str
     category: str
     amount: float
+    currency: str
     description: str
     account_id: int | None = None
     account_name: str | None = None
@@ -131,6 +136,7 @@ class TransferResponse(BaseModel):
     from_account_id: int
     to_account_id: int
     amount: float
+    currency: str
     description: str
     from_account_name: str
     to_account_name: str
@@ -141,12 +147,14 @@ class BudgetResponse(BaseModel):
     id: int
     category: str
     monthly_limit: float
+    currency: str
     month_year: str
     spent: float
     percentage: float
 
 
 class DashboardResponse(BaseModel):
+    currency: str
     balance: float
     income: float
     expenses: float

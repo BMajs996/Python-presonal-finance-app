@@ -9,7 +9,7 @@ A web dashboard refactor of the personal finance desktop application.
 - HTML/CSS/JavaScript frontend
 - Chart.js for charts
 
-The backend keeps the existing SQLite schema compatible with the desktop application and upgrades it automatically with versioned migrations. The current schema adds `accounts`, `transfers`, and account links on transactions/recurring transactions.
+The backend keeps the existing SQLite schema compatible with the desktop application and upgrades it automatically with versioned migrations. Monetary values are persisted as exact integer cents while legacy numeric columns remain available for compatibility.
 
 ## Run locally
 
@@ -51,8 +51,12 @@ finance-dashboard/
 │   ├── requirements.txt
 │   └── legacy_desktop.py
 ├── frontend/
+│   ├── api/                  # endpoint-specific clients
+│   ├── components/           # reusable charts, tables, modals, and toast
+│   ├── utils/                # pure formatting, date, escaping, and CSV helpers
+│   ├── views/                # feature-owned UI and event handling
 │   ├── index.html
-│   ├── app.js
+│   ├── app.js                # navigation and application composition
 │   └── styles.css
 ├── data/                     # local DB; *.db is gitignored
 ├── .github/workflows/
@@ -114,6 +118,7 @@ The backend is separated into focused layers:
 feature code should depend on the focused service or repository instead of adding more methods to those facades.
 
 The application uses FastAPI's lifespan API for database startup/shutdown instead of the deprecated `on_event` hooks.
+The frontend uses native browser ES modules served from `/assets`; no bundler or JavaScript framework is required.
 
 ## Development
 
@@ -127,7 +132,7 @@ pytest -q
 ruff check .
 ```
 
-The default database remains `data/personal_finance.db`. Override it with `DATABASE_PATH` in a `.env` file when needed.
+The default database remains `data/personal_finance.db`. Override it with `DATABASE_PATH` in a `.env` file when needed. Set `BASE_CURRENCY` to a three-letter ISO code before creating a database; it defaults to `USD`.
 
 ## Run
 
@@ -144,7 +149,9 @@ If you `cd backend` first, use `uvicorn app.main:app --reload` instead. Running
 
 The application now models money across separate accounts. Every transaction is associated with an account; legacy transactions are automatically assigned to `Main Account` during migration so the existing totals remain unchanged.
 
-Transfers are stored separately from transactions. Moving €500 from Checking to Savings therefore changes the two account balances but does not count as €500 of income or expense.
+Transfers are stored separately from transactions. Moving money from Checking to Savings therefore changes the two account balances but does not change income, expenses, global balance, or monthly net worth.
+
+The application uses one configured base currency and rejects accounts in a different currency. This prevents invalid totals that silently add unrelated currencies. Cross-currency accounts will require an explicit exchange-rate model in a future schema.
 
 Account balances are calculated as:
 
@@ -160,6 +167,6 @@ Accounts can be deactivated without deleting their historical transactions. `Mai
 
 ## Database migrations
 
-Schema migrations are tracked in `schema_migrations`. On startup the application upgrades older databases automatically. Migration 1 creates accounts/transfers, adds `account_id` to transactions and recurring transactions, creates indexes, and assigns existing records to `Main Account`.
+Schema migrations are tracked in `schema_migrations`. On startup the application upgrades older databases automatically. Migration 1 creates accounts/transfers and assigns legacy records to `Main Account`. Migration 2 adds and backfills integer-cent columns for every monetary field without deleting the legacy values.
 
 For safety, keep `data/*.db` out of Git. The repository contains no personal financial data.

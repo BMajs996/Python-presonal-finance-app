@@ -1,4 +1,5 @@
 from .account_service import AccountService
+from .balance_service import BalanceService
 from .budget_service import BudgetService
 from .recurring_service import RecurringService
 from .report_service import ReportService
@@ -11,9 +12,10 @@ class FinanceService:
 
     def __init__(self, repository):
         self.accounts_service = AccountService(repository.accounts)
+        self.balance_service = BalanceService(repository.balances)
         self.budgets_service = BudgetService(repository.budgets)
         self.recurring_service = RecurringService(repository.recurring_transactions)
-        self.reports_service = ReportService(repository.reports)
+        self.reports_service = ReportService(repository.reports, self.balance_service)
         self.transactions_service = TransactionService(repository.transactions)
         self.transfers_service = TransferService(repository.transfers)
 

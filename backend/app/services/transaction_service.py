@@ -1,8 +1,17 @@
+from ..domain.date_range import DateRange
+
+
 class TransactionService:
     def __init__(self, repository):
         self.repository = repository
 
     def list(self, **filters):
+        date_range = DateRange(
+            start=filters.pop("date_start", None),
+            end=filters.pop("date_end", None),
+        )
+        filters["date_start"] = date_range.start_iso
+        filters["date_end"] = date_range.end_iso
         return self.repository.list(**filters)
 
     def get(self, transaction_id: int):

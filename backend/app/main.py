@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .api import accounts, budgets, dashboard, recurring, reports, transactions, transfers
 from .core.config import settings
@@ -13,8 +14,8 @@ from .services.finance_service import FinanceService
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    database = FinanceDatabase(settings.database_path)
-    repository = FinanceRepository(database)
+    database = FinanceDatabase(settings.database_path, settings.base_currency)
+    repository = FinanceRepository(database, settings.base_currency)
     repository.process_recurring_transactions()
     app.state.database = database
     app.state.finance_service = FinanceService(repository)
@@ -58,11 +59,4 @@ def index():
     return FileResponse(settings.frontend_path / "index.html")
 
 
-@app.get("/app.js")
-def app_js():
-    return FileResponse(settings.frontend_path / "app.js", media_type="application/javascript")
-
-
-@app.get("/styles.css")
-def styles():
-    return FileResponse(settings.frontend_path / "styles.css", media_type="text/css")
+app.mount("/assets", StaticFiles(directory=settings.frontend_path), name="frontend-assets")

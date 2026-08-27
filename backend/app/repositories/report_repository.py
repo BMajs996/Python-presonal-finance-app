@@ -1,122 +1,66 @@
-from datetime import date, timedelta
+from datetime import date
 
+from ..domain.money import Money
 from ..domain.recurrence import add_months
 from .account_repository import AccountRepository
 from .base_repository import BaseRepository
 from .budget_repository import BudgetRepository
+from .transaction_repository import TransactionRepository
 
 
 class ReportRepository(BaseRepository):
-    def __init__(self, connection):
-        super().__init__(connection)
-        self.accounts = AccountRepository(connection)
-        self.budgets = BudgetRepository(connection)
+    def __init__(self, connection, base_currency: str = "USD"):
+        super().__init__(connection, base_currency)
+        self.accounts = AccountRepository(connection, base_currency)
+        self.budgets = BudgetRepository(connection, base_currency)
+        self.transactions = TransactionRepository(connection, base_currency)
 
-    def dashboard(self, days: int = 30):
-        summary = {"income": 0.0, "expense": 0.0}
+    def dashboard_data(self):
+        summary = {"income": 0, "expense": 0}
         for row in self.conn.execute(
-            "SELECT type, COALESCE(SUM(amount),0) total FROM transactions GROUP BY type"
+            """
+            SELECT t.type, COALESCE(SUM(t.amount_cents),0) total_cents
+            FROM transactions t
+            JOIN accounts a ON a.id=t.account_id
+            WHERE a.currency=?
+            GROUP BY t.type
+            """,
+            (self.base_currency,),
         ):
-            summary[row["type"]] = float(row["total"] or 0)
-
-        balance_row = self.conn.execute(
-            """
-            SELECT COALESCE((SELECT SUM(opening_balance) FROM accounts),0)
-                 + COALESCE((SELECT SUM(CASE WHEN type='income' THEN amount ELSE -amount END)
-                             FROM transactions WHERE account_id IN (SELECT id FROM accounts)),0)
-                 + COALESCE((SELECT SUM(amount) FROM transfers
-                             WHERE to_account_id IN (SELECT id FROM accounts)),0)
-                 - COALESCE((SELECT SUM(amount) FROM transfers
-                             WHERE from_account_id IN (SELECT id FROM accounts)),0)
-                 AS balance
-            """
-        ).fetchone()
-        balance = float(balance_row["balance"] or 0)
+            summary[row["type"]] = int(row["total_cents"] or 0)
 
         expenses = [
-            {"category": row["category"], "total": float(row["total"] or 0)}
+            {
+                "category": row["category"],
+                "total": Money(row["total_cents"] or 0, self.base_currency).as_float(),
+            }
             for row in self.conn.execute(
                 """
-                SELECT category, SUM(amount) total
-                FROM transactions
-                WHERE type='expense'
-                GROUP BY category
-                ORDER BY total DESC
-                """
-            )
-        ]
-
-        start = date.today() - timedelta(days=max(1, days))
-        opening = self.conn.execute(
-            """
-            SELECT COALESCE((SELECT SUM(opening_balance) FROM accounts),0)
-                 + COALESCE((SELECT SUM(CASE WHEN type='income' THEN amount ELSE -amount END)
-                             FROM transactions WHERE date < ? AND account_id IN
-                             (SELECT id FROM accounts)),0)
-                 + COALESCE((SELECT SUM(amount) FROM transfers WHERE date < ? AND to_account_id IN
-                             (SELECT id FROM accounts)),0)
-                 - COALESCE((SELECT SUM(amount) FROM transfers WHERE date < ? AND from_account_id IN
-                             (SELECT id FROM accounts)),0)
-                 AS balance
-            """,
-            (start.isoformat(), start.isoformat(), start.isoformat()),
-        ).fetchone()["balance"]
-
-        running = float(opening or 0)
-        history = []
-        daily = self.conn.execute(
-            """
-            SELECT date, SUM(change) change
-            FROM (
-                SELECT date, SUM(CASE WHEN type='income' THEN amount ELSE -amount END) change
-                FROM transactions
-                WHERE date >= ? AND account_id IN (SELECT id FROM accounts)
-                GROUP BY date
-                UNION ALL
-                SELECT date, -SUM(amount) change
-                FROM transfers
-                WHERE date >= ? AND from_account_id IN (SELECT id FROM accounts)
-                GROUP BY date
-                UNION ALL
-                SELECT date, SUM(amount) change
-                FROM transfers
-                WHERE date >= ? AND to_account_id IN (SELECT id FROM accounts)
-                GROUP BY date
-            )
-            GROUP BY date
-            ORDER BY date
-            """,
-            (start.isoformat(), start.isoformat(), start.isoformat()),
-        ).fetchall()
-        for row in daily:
-            running += float(row["change"] or 0)
-            history.append({"date": row["date"], "balance": round(running, 2)})
-
-        recent = [
-            dict(row)
-            for row in self.conn.execute(
-                """
-                SELECT t.*, a.name AS account_name
+                SELECT t.category, SUM(t.amount_cents) total_cents
                 FROM transactions t
-                LEFT JOIN accounts a ON a.id=t.account_id
-                ORDER BY t.date DESC, t.id DESC LIMIT 8
-                """
+                JOIN accounts a ON a.id=t.account_id
+                WHERE t.type='expense' AND a.currency=?
+                GROUP BY t.category
+                ORDER BY total_cents DESC
+                """,
+                (self.base_currency,),
             )
         ]
-
+        recent, _ = self.transactions.list(limit=8)
+        income = Money(summary["income"], self.base_currency)
+        expenses_total = Money(summary["expense"], self.base_currency)
         return {
-            "balance": round(balance, 2),
-            "income": round(summary["income"], 2),
-            "expenses": round(summary["expense"], 2),
-            "net": round(summary["income"] - summary["expense"], 2),
+            "currency": self.base_currency,
+            "income": income.as_float(),
+            "expenses": expenses_total.as_float(),
+            "net": (income - expenses_total).as_float(),
             "expense_categories": expenses,
-            "balance_history": history,
             "recent_transactions": recent,
             "budgets": self.budgets.usage(),
             "accounts": self.accounts.list(),
         }
 
-    def monthly(self, months: int = 12):
+    def monthly_data(self, months: int = 12):
         months = min(max(months, 1), 60)
         today = date.today().replace(day=1)
         labels = [
@@ -138,89 +82,54 @@ class ReportRepository(BaseRepository):
 
         rows = self.conn.execute(
             """
-            SELECT strftime('%Y-%m', date) month,
-                   SUM(CASE WHEN type='income' THEN amount ELSE 0 END) income,
-                   SUM(CASE WHEN type='expense' THEN amount ELSE 0 END) expenses
-            FROM transactions
-            WHERE strftime('%Y-%m', date) >= ?
+            SELECT strftime('%Y-%m', t.date) month,
+                   SUM(CASE WHEN t.type='income' THEN t.amount_cents ELSE 0 END) income_cents,
+                   SUM(CASE WHEN t.type='expense' THEN t.amount_cents ELSE 0 END) expense_cents
+            FROM transactions t
+            JOIN accounts a ON a.id=t.account_id
+            WHERE strftime('%Y-%m', t.date) >= ? AND a.currency=?
             GROUP BY month
             ORDER BY month
             """,
-            (start_month,),
+            (start_month, self.base_currency),
         ).fetchall()
         for row in rows:
             if row["month"] not in monthly:
                 continue
-            income = float(row["income"] or 0)
-            expenses = float(row["expenses"] or 0)
+            income = Money(row["income_cents"] or 0, self.base_currency)
+            expenses = Money(row["expense_cents"] or 0, self.base_currency)
+            net = income - expenses
             monthly[row["month"]].update(
                 {
-                    "income": round(income, 2),
-                    "expenses": round(expenses, 2),
-                    "net": round(income - expenses, 2),
+                    "income": income.as_float(),
+                    "expenses": expenses.as_float(),
+                    "net": net.as_float(),
                     "savings_rate": (
-                        round(((income - expenses) / income) * 100, 1)
-                        if income else 0.0
+                        round((net.cents / income.cents) * 100, 1)
+                        if income.cents else 0.0
                     ),
                 }
             )
 
-        opening = self.conn.execute(
-            """
-            SELECT COALESCE((SELECT SUM(opening_balance) FROM accounts),0)
-                 + COALESCE((SELECT SUM(CASE WHEN type='income' THEN amount ELSE -amount END)
-                             FROM transactions WHERE strftime('%Y-%m', date) < ?),0)
-                 + COALESCE((SELECT SUM(amount) FROM transfers WHERE strftime('%Y-%m', date) < ?),0)
-                 - COALESCE((SELECT SUM(amount) FROM transfers WHERE strftime('%Y-%m', date) < ?),0)
-                 AS balance
-            """,
-            (start_month, start_month, start_month),
-        ).fetchone()["balance"]
-        running = float(opening or 0)
-        changes = {
-            row["month"]: float(row["change"] or 0)
-            for row in self.conn.execute(
-                """
-                SELECT month, SUM(change) change
-                FROM (
-                    SELECT strftime('%Y-%m', date) month,
-                           SUM(CASE WHEN type='income' THEN amount ELSE -amount END) change
-                    FROM transactions
-                    WHERE strftime('%Y-%m', date) >= ?
-                    GROUP BY month
-                    UNION ALL
-                    SELECT strftime('%Y-%m', date) month, -SUM(amount) change
-                    FROM transfers
-                    WHERE strftime('%Y-%m', date) >= ?
-                    GROUP BY month
-                    UNION ALL
-                    SELECT strftime('%Y-%m', date) month, SUM(amount) change
-                    FROM transfers
-                    WHERE strftime('%Y-%m', date) >= ?
-                    GROUP BY month
-                )
-                GROUP BY month
-                """,
-                (start_month, start_month, start_month),
-            )
-        }
-        for label in labels:
-            running += changes.get(label, 0.0)
-            monthly[label]["balance"] = round(running, 2)
-
         category_rows = self.conn.execute(
             """
-            SELECT category, SUM(amount) total
-            FROM transactions
-            WHERE type='expense' AND strftime('%Y-%m', date) >= ?
-            GROUP BY category
-            ORDER BY total DESC
+            SELECT t.category, SUM(t.amount_cents) total_cents
+            FROM transactions t
+            JOIN accounts a ON a.id=t.account_id
+            WHERE t.type='expense'
+              AND strftime('%Y-%m', t.date) >= ?
+              AND a.currency=?
+            GROUP BY t.category
+            ORDER BY total_cents DESC
             LIMIT 10
             """,
-            (start_month,),
+            (start_month, self.base_currency),
         ).fetchall()
         top_categories = [
-            {"category": row["category"], "total": round(float(row["total"] or 0), 2)}
+            {
+                "category": row["category"],
+                "total": Money(row["total_cents"] or 0, self.base_currency).as_float(),
+            }
             for row in category_rows
         ]
         top_category_names = [row["category"] for row in top_categories[:5]]
@@ -228,24 +137,43 @@ class ReportRepository(BaseRepository):
         category_trends = [
             {
                 "category": category,
-                "totals": [trend_totals.get((label, category), 0.0) for label in labels],
+                "totals": [
+                    Money(trend_totals.get((label, category), 0), self.base_currency).as_float()
+                    for label in labels
+                ],
             }
             for category in top_category_names
         ]
 
         series = list(monthly.values())
-        total_income = round(sum(row["income"] for row in series), 2)
-        total_expenses = round(sum(row["expenses"] for row in series), 2)
-        net = round(total_income - total_expenses, 2)
+        total_income = Money(
+            sum(
+                Money.from_amount(item["income"], self.base_currency).cents
+                for item in series
+            ),
+            self.base_currency,
+        )
+        total_expenses = Money(
+            sum(
+                Money.from_amount(item["expenses"], self.base_currency).cents
+                for item in series
+            ),
+            self.base_currency,
+        )
+        net = total_income - total_expenses
         return {
+            "currency": self.base_currency,
             "months": series,
             "top_categories": top_categories,
             "category_trends": category_trends,
             "summary": {
-                "income": total_income,
-                "expenses": total_expenses,
-                "net": net,
-                "savings_rate": round((net / total_income) * 100, 1) if total_income else 0.0,
+                "income": total_income.as_float(),
+                "expenses": total_expenses.as_float(),
+                "net": net.as_float(),
+                "savings_rate": (
+                    round((net.cents / total_income.cents) * 100, 1)
+                    if total_income.cents else 0.0
+                ),
             },
         }
 
@@ -254,16 +182,20 @@ class ReportRepository(BaseRepository):
             return {}
         placeholders = ",".join("?" for _ in categories)
         return {
-            (row["month"], row["category"]): round(float(row["total"] or 0), 2)
+            (row["month"], row["category"]): int(row["total_cents"] or 0)
             for row in self.conn.execute(
                 f"""
-                SELECT strftime('%Y-%m', date) month, category, SUM(amount) total
-                FROM transactions
-                WHERE type='expense'
-                  AND strftime('%Y-%m', date) >= ?
-                  AND category IN ({placeholders})
-                GROUP BY month, category
+                SELECT strftime('%Y-%m', t.date) month,
+                       t.category,
+                       SUM(t.amount_cents) total_cents
+                FROM transactions t
+                JOIN accounts a ON a.id=t.account_id
+                WHERE t.type='expense'
+                  AND strftime('%Y-%m', t.date) >= ?
+                  AND t.category IN ({placeholders})
+                  AND a.currency=?
+                GROUP BY month, t.category
                 """,
-                (start_month, *categories),
+                (start_month, *categories, self.base_currency),
             ).fetchall()
         }

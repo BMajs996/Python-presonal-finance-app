@@ -2,8 +2,9 @@ import sqlite3
 
 
 class BaseRepository:
-    def __init__(self, connection: sqlite3.Connection):
+    def __init__(self, connection: sqlite3.Connection, base_currency: str = "USD"):
         self.conn = connection
+        self.base_currency = base_currency
 
     def default_account_id(self) -> int:
         row = self.conn.execute(
@@ -21,3 +22,11 @@ class BaseRepository:
         if not row:
             raise ValueError(f"Account {resolved} does not exist or is inactive")
         return resolved
+
+    def account_currency(self, account_id: int) -> str:
+        row = self.conn.execute(
+            "SELECT currency FROM accounts WHERE id=?", (account_id,)
+        ).fetchone()
+        if not row:
+            raise ValueError(f"Account {account_id} does not exist")
+        return row["currency"]

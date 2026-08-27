@@ -7,8 +7,9 @@ from .migrations import migrate
 class FinanceDatabase:
     """Own the SQLite connection and keep its schema current."""
 
-    def __init__(self, db_path: str | Path):
+    def __init__(self, db_path: str | Path, base_currency: str = "USD"):
         self.db_path = str(db_path)
+        self.base_currency = base_currency
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.execute("PRAGMA foreign_keys = ON")
@@ -52,7 +53,7 @@ class FinanceDatabase:
             );
             """
         )
-        migrate(self.conn)
+        migrate(self.conn, self.base_currency)
         self.conn.commit()
 
     def close(self):

@@ -1,4 +1,5 @@
 from .account_repository import AccountRepository
+from .balance_repository import BalanceRepository
 from .budget_repository import BudgetRepository
 from .recurring_repository import RecurringRepository
 from .report_repository import ReportRepository
@@ -9,15 +10,24 @@ from .transfer_repository import TransferRepository
 class FinanceRepository:
     """Compatibility facade over feature-owned repositories."""
 
-    def __init__(self, database):
+    def __init__(self, database, base_currency: str = "USD"):
         self.database = database
         connection = database.conn
-        self.accounts = AccountRepository(connection)
-        self.budgets = BudgetRepository(connection)
-        self.recurring_transactions = RecurringRepository(connection)
-        self.reports = ReportRepository(connection)
-        self.transactions = TransactionRepository(connection)
-        self.transfers = TransferRepository(connection)
+        self.base_currency = base_currency
+        main_currency = connection.execute(
+            "SELECT currency FROM accounts WHERE name='Main Account'"
+        ).fetchone()["currency"]
+        if main_currency != base_currency:
+            raise ValueError(
+                f"BASE_CURRENCY is {base_currency}, but Main Account uses {main_currency}"
+            )
+        self.accounts = AccountRepository(connection, base_currency)
+        self.balances = BalanceRepository(connection, base_currency)
+        self.budgets = BudgetRepository(connection, base_currency)
+        self.recurring_transactions = RecurringRepository(connection, base_currency)
+        self.reports = ReportRepository(connection, base_currency)
+        self.transactions = TransactionRepository(connection, base_currency)
+        self.transfers = TransferRepository(connection, base_currency)
 
     def list_transactions(self, *args, **kwargs):
         return self.transactions.list(*args, **kwargs)
@@ -33,9 +43,6 @@ class FinanceRepository:
 
     def delete_transaction(self, transaction_id):
         return self.transactions.delete(transaction_id)
-
-    def dashboard(self, days=30):
-        return self.reports.dashboard(days)
 
     def categories(self):
         return self.transactions.categories()
@@ -87,9 +94,6 @@ class FinanceRepository:
 
     def delete_budget(self, budget_id):
         return self.budgets.delete(budget_id)
-
-    def monthly_report(self, months=12):
-        return self.reports.monthly(months)
 
     def process_recurring_transactions(self):
         return self.recurring_transactions.process_due()

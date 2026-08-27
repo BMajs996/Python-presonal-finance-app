@@ -89,7 +89,7 @@ def test_delete_transaction(db):
     assert db.list_transactions()[1] == 0
 
 
-def test_dashboard_calculates_balance_income_expenses_and_net(db):
+def test_dashboard_calculates_balance_income_expenses_and_net(db, finance_service):
     from app.schemas import TransactionCreate
 
     db.add_transaction(
@@ -117,7 +117,7 @@ def test_dashboard_calculates_balance_income_expenses_and_net(db):
         )
     )
 
-    dashboard = db.dashboard(days=30)
+    dashboard = finance_service.dashboard(days=30)
 
     assert dashboard["balance"] == 2700
     assert dashboard["income"] == 3000
@@ -274,7 +274,7 @@ def test_update_recurring_transaction(db):
     assert updated["next_date"] == "2026-02-15"
 
 
-def test_monthly_report(db):
+def test_monthly_report(db, finance_service):
     from app.schemas import TransactionCreate
 
     db.add_transaction(
@@ -294,7 +294,7 @@ def test_monthly_report(db):
         )
     )
 
-    report = db.monthly_report(months=3)
+    report = finance_service.monthly_report(months=3)
 
     assert len(report["months"]) == 3
     assert report["summary"]["income"] == 3000
@@ -379,14 +379,19 @@ def test_legacy_database_is_migrated_without_changing_balance(tmp_path):
     try:
         assert database.conn.execute(
             "SELECT MAX(version) FROM schema_migrations"
-        ).fetchone()[0] == 1
+        ).fetchone()[0] == 2
         assert database.conn.execute(
             "SELECT COUNT(*) FROM accounts"
         ).fetchone()[0] == 1
         assert database.conn.execute(
             "SELECT COUNT(*) FROM transactions WHERE account_id IS NOT NULL"
         ).fetchone()[0] == 2
-        assert repository.dashboard()["balance"] == 900
+        assert database.conn.execute(
+            "SELECT SUM(amount_cents) FROM transactions"
+        ).fetchone()[0] == 110000
+        from app.services.finance_service import FinanceService
+
+        assert FinanceService(repository).dashboard()["balance"] == 900
     finally:
         database.close()
 
@@ -421,7 +426,7 @@ def test_accounts_and_balances(db):
     assert account["transaction_count"] == 2
 
 
-def test_transfers_move_money_without_changing_global_net(db):
+def test_transfers_move_money_without_changing_global_net(db, finance_service):
     from app.schemas import AccountCreate, TransferCreate
 
     checking = db.add_account(AccountCreate(name="Checking"))
@@ -440,8 +445,8 @@ def test_transfers_move_money_without_changing_global_net(db):
     assert transfer["amount"] == 500
     assert db.get_account(checking["id"])["balance"] == -500
     assert db.get_account(savings["id"])["balance"] == 500
-    assert db.dashboard()["net"] == 0
-    assert db.dashboard()["balance"] == 0
+    assert finance_service.dashboard()["net"] == 0
+    assert finance_service.dashboard()["balance"] == 0
 
 
 def test_transaction_defaults_to_main_account(db):
