@@ -63,7 +63,7 @@ class TransferRepository(BaseRepository):
                     datetime.now(UTC).isoformat(),
                 ),
             )
-        return self.get(cursor.lastrowid)
+        return self.get(self.inserted_id(cursor))
 
     def delete(self, transfer_id: int):
         with self.conn:

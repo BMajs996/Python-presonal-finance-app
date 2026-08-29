@@ -103,9 +103,7 @@ def test_income_minus_expenses_always_equals_net(db, finance_service):
     assert dashboard["net"] == 800.07
 
 
-def test_dashboard_period_and_comparisons_use_only_selected_days(
-    db, finance_service
-):
+def test_dashboard_period_and_comparisons_use_only_selected_days(db, finance_service):
     today = date.today()
     transactions = [
         (today, "income", "Salary", "200.00"),
@@ -136,15 +134,11 @@ def test_dashboard_period_and_comparisons_use_only_selected_days(
         "expenses": -37.5,
         "net": 650,
     }
-    assert dashboard["expense_categories"] == [
-        {"category": "Food", "total": 50}
-    ]
+    assert dashboard["expense_categories"] == [{"category": "Food", "total": 50}]
 
 
 def test_transfer_is_neutral_to_global_and_monthly_balance(db, finance_service):
-    checking = db.add_account(
-        AccountCreate(name="Checking", opening_balance="1000.00")
-    )
+    checking = db.add_account(AccountCreate(name="Checking", opening_balance="1000.00"))
     savings = db.add_account(AccountCreate(name="Savings", type="savings"))
     before = finance_service.monthly_report(months=3)
 

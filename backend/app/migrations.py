@@ -48,17 +48,17 @@ def _migration_1_accounts_and_transfers(
 
     if not _column_exists(conn, "transactions", "account_id"):
         conn.execute(
-            "ALTER TABLE transactions ADD COLUMN account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL"
+            "ALTER TABLE transactions ADD COLUMN account_id INTEGER "
+            "REFERENCES accounts(id) ON DELETE SET NULL"
         )
 
     if not _column_exists(conn, "recurring_transactions", "account_id"):
         conn.execute(
-            "ALTER TABLE recurring_transactions ADD COLUMN account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL"
+            "ALTER TABLE recurring_transactions ADD COLUMN account_id INTEGER "
+            "REFERENCES accounts(id) ON DELETE SET NULL"
         )
 
-    default_account = conn.execute(
-        "SELECT id FROM accounts WHERE name = 'Main Account' LIMIT 1"
-    ).fetchone()
+    default_account = conn.execute("SELECT id FROM accounts WHERE name = 'Main Account' LIMIT 1").fetchone()
     if default_account is None:
         cur = conn.execute(
             """
@@ -113,13 +113,13 @@ def _migration_2_integer_money(
     for table, legacy_column, cents_column in money_columns:
         if not _column_exists(conn, table, cents_column):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {cents_column} INTEGER")
-        conn.execute(
-            f"""
+        # Identifiers come only from the fixed money_columns tuple above.
+        backfill_sql = f"""
             UPDATE {table}
             SET {cents_column}=CAST(ROUND(COALESCE({legacy_column}, 0) * 100) AS INTEGER)
             WHERE {cents_column} IS NULL
             """
-        )
+        conn.execute(backfill_sql)
 
 
 def migrate(conn: sqlite3.Connection, base_currency: str = "USD") -> int:

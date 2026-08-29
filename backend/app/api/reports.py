@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 
-from .dependencies import get_finance_service
 from ..services.finance_service import FinanceService
+from .dependencies import get_finance_service
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 

@@ -23,7 +23,7 @@ class TransactionRepository(BaseRepository):
             LEFT JOIN accounts a ON a.id=t.account_id
             WHERE 1=1
         """
-        params = []
+        params: list[str | int] = []
         if search:
             query += " AND (t.description LIKE ? OR t.category LIKE ? OR a.name LIKE ?)"
             params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
@@ -43,7 +43,9 @@ class TransactionRepository(BaseRepository):
             query += " AND t.date<=?"
             params.append(date_end)
 
-        total = self.conn.execute(f"SELECT COUNT(*) FROM ({query})", params).fetchone()[0]
+        # Query fragments are fixed above and all request values remain bound parameters.
+        count_sql = f"SELECT COUNT(*) FROM ({query})"
+        total = self.conn.execute(count_sql, params).fetchone()[0]
         query += " ORDER BY t.date DESC, t.id DESC LIMIT ? OFFSET ?"
         rows = self.conn.execute(query, [*params, limit, offset]).fetchall()
         return [self._to_domain(row).to_dict() for row in rows], total
@@ -81,7 +83,7 @@ class TransactionRepository(BaseRepository):
                     account_id,
                 ),
             )
-        return self.get(cursor.lastrowid)
+        return self.get(self.inserted_id(cursor))
 
     def update(self, transaction_id: int, payload):
         existing = self.get(transaction_id)
@@ -120,9 +122,7 @@ class TransactionRepository(BaseRepository):
     def categories(self):
         return [
             row["category"]
-            for row in self.conn.execute(
-                "SELECT DISTINCT category FROM transactions ORDER BY category"
-            )
+            for row in self.conn.execute("SELECT DISTINCT category FROM transactions ORDER BY category")
         ]
 
     @staticmethod

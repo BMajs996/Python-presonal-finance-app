@@ -54,7 +54,7 @@ class RecurringRepository(BaseRepository):
                     account_id,
                 ),
             )
-        return self.get(cursor.lastrowid)
+        return self.get(self.inserted_id(cursor))
 
     def update(self, recurring_id: int, payload):
         if not self.conn.execute(
@@ -123,7 +123,7 @@ class RecurringRepository(BaseRepository):
                             row["category"],
                             row["amount"],
                             row["amount_cents"],
-                            f'{row["description"]} (Auto)'.strip(),
+                            f"{row['description']} (Auto)".strip(),
                             row["account_id"] or self.default_account_id(),
                         ),
                     )

@@ -1,5 +1,6 @@
 from datetime import date
 
+import pytest
 from app.domain.recurrence import add_months, calculate_next_date
 
 
@@ -175,9 +176,7 @@ def test_budget_usage(db):
         )
     )
 
-    budget = db.add_budget(
-        BudgetCreate(category="Food", monthly_limit=500)
-    )
+    budget = db.add_budget(BudgetCreate(category="Food", monthly_limit=500))
 
     assert budget["category"] == "Food"
     assert budget["spent"] == 250
@@ -187,12 +186,8 @@ def test_budget_usage(db):
 def test_budget_upsert_does_not_duplicate_category(db):
     from app.schemas import BudgetCreate
 
-    first = db.add_budget(
-        BudgetCreate(category="Food", monthly_limit=500)
-    )
-    second = db.add_budget(
-        BudgetCreate(category="Food", monthly_limit=700)
-    )
+    first = db.add_budget(BudgetCreate(category="Food", monthly_limit=500))
+    second = db.add_budget(BudgetCreate(category="Food", monthly_limit=700))
 
     assert second["id"] == first["id"]
     assert second["monthly_limit"] == 700
@@ -377,18 +372,15 @@ def test_legacy_database_is_migrated_without_changing_balance(tmp_path):
     database = FinanceDatabase(legacy_path)
     repository = FinanceRepository(database)
     try:
-        assert database.conn.execute(
-            "SELECT MAX(version) FROM schema_migrations"
-        ).fetchone()[0] == 2
-        assert database.conn.execute(
-            "SELECT COUNT(*) FROM accounts"
-        ).fetchone()[0] == 1
-        assert database.conn.execute(
-            "SELECT COUNT(*) FROM transactions WHERE account_id IS NOT NULL"
-        ).fetchone()[0] == 2
-        assert database.conn.execute(
-            "SELECT SUM(amount_cents) FROM transactions"
-        ).fetchone()[0] == 110000
+        assert database.conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 2
+        assert database.conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 1
+        assert (
+            database.conn.execute(
+                "SELECT COUNT(*) FROM transactions WHERE account_id IS NOT NULL"
+            ).fetchone()[0]
+            == 2
+        )
+        assert database.conn.execute("SELECT SUM(amount_cents) FROM transactions").fetchone()[0] == 110000
         from app.services.finance_service import FinanceService
 
         assert FinanceService(repository).dashboard()["balance"] == 900
@@ -399,9 +391,7 @@ def test_legacy_database_is_migrated_without_changing_balance(tmp_path):
 def test_accounts_and_balances(db):
     from app.schemas import AccountCreate, TransactionCreate
 
-    savings = db.add_account(
-        AccountCreate(name="Savings", type="savings", opening_balance=1000)
-    )
+    savings = db.add_account(AccountCreate(name="Savings", type="savings", opening_balance=1000))
     db.add_transaction(
         TransactionCreate(
             date=date.today(),
@@ -469,7 +459,7 @@ def test_transfer_cannot_use_same_account(db):
     from app.schemas import TransferCreate
 
     main_id = db.accounts.default_account_id()
-    try:
+    with pytest.raises(ValueError, match="different"):
         db.add_transfer(
             TransferCreate(
                 date=date.today(),
@@ -478,6 +468,3 @@ def test_transfer_cannot_use_same_account(db):
                 amount=100,
             )
         )
-        assert False, "Expected same-account transfer to fail"
-    except ValueError as exc:
-        assert "different" in str(exc)

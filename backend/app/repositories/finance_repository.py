@@ -18,9 +18,7 @@ class FinanceRepository:
             "SELECT currency FROM accounts WHERE name='Main Account'"
         ).fetchone()["currency"]
         if main_currency != base_currency:
-            raise ValueError(
-                f"BASE_CURRENCY is {base_currency}, but Main Account uses {main_currency}"
-            )
+            raise ValueError(f"BASE_CURRENCY is {base_currency}, but Main Account uses {main_currency}")
         self.accounts = AccountRepository(connection, base_currency)
         self.balances = BalanceRepository(connection, base_currency)
         self.budgets = BudgetRepository(connection, base_currency)

@@ -1,5 +1,7 @@
 # Finance Dashboard
 
+[![CI](https://github.com/BMajs996/Python-presonal-finance-app/actions/workflows/ci.yml/badge.svg)](https://github.com/BMajs996/Python-presonal-finance-app/actions/workflows/ci.yml)
+
 A web dashboard refactor of the personal finance desktop application.
 
 ## Stack
@@ -48,6 +50,7 @@ finance-dashboard/
 │   │   ├── schemas.py        # Pydantic request models
 │   │   └── main.py           # FastAPI application
 │   ├── tests/
+│   ├── requirements-dev.txt
 │   ├── requirements.txt
 │   └── legacy_desktop.py
 ├── frontend/
@@ -131,10 +134,18 @@ From the repository root:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r backend/requirements.txt
-pytest -q
-ruff check .
+pip install -r backend/requirements-dev.txt
+ruff check backend/app backend/tests
+ruff format --check backend/app backend/tests
+mypy backend/app
+pytest --cov=backend/app --cov-branch --cov-report=term-missing
+pip-audit -r backend/requirements.txt --strict
+bandit -q -r backend/app -ll -ii
 ```
+
+Runtime and development dependencies are pinned to exact versions. CI runs on Python 3.12 and requires
+linting, formatting, type checking, JavaScript syntax checking, 80% branch coverage, dependency auditing,
+and a Bandit source scan. Dependabot checks Python packages and GitHub Actions weekly.
 
 The default database remains `data/personal_finance.db`. Override it with `DATABASE_PATH` in a `.env` file when needed. Set `BASE_CURRENCY` to a three-letter ISO code before creating a database; it defaults to `USD`.
 

@@ -89,7 +89,7 @@ class AccountCreate(BaseModel):
             raise ValueError("Account name is required")
         return value
 
-    @field_validator("currency")
+    @field_validator("currency", mode="before")
     @classmethod
     def clean_currency(cls, value: str) -> str:
         value = value.strip().upper()

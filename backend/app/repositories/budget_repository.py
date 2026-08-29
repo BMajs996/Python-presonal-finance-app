@@ -34,10 +34,7 @@ class BudgetRepository(BaseRepository):
                     "currency": self.base_currency,
                     "month_year": row["month_year"],
                     "spent": spent.as_float(),
-                    "percentage": (
-                        round((spent.cents / limit.cents) * 100, 1)
-                        if limit.cents else 0
-                    ),
+                    "percentage": (round((spent.cents / limit.cents) * 100, 1) if limit.cents else 0),
                 }
             )
         return result
@@ -57,17 +54,12 @@ class BudgetRepository(BaseRepository):
                 """,
                 (payload.category.strip(), limit.as_float(), limit.cents, month),
             )
-        return next(
-            budget for budget in self.usage()
-            if budget["category"] == payload.category.strip()
-        )
+        return next(budget for budget in self.usage() if budget["category"] == payload.category.strip())
 
     def update(self, budget_id: int, payload):
         month = date.today().strftime("%Y-%m")
         limit = Money.from_amount(payload.monthly_limit, self.base_currency)
-        if not self.conn.execute(
-            "SELECT id FROM budgets WHERE id=?", (budget_id,)
-        ).fetchone():
+        if not self.conn.execute("SELECT id FROM budgets WHERE id=?", (budget_id,)).fetchone():
             return None
         with self.conn:
             self.conn.execute(

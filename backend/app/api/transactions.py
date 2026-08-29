@@ -2,9 +2,9 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from .dependencies import get_finance_service
 from ..schemas import TransactionCreate, TransactionUpdate
 from ..services.finance_service import FinanceService
+from .dependencies import get_finance_service
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
@@ -46,7 +46,9 @@ def create_transaction(payload: TransactionCreate, service: FinanceService = Dep
 
 
 @router.put("/{transaction_id}")
-def update_transaction(transaction_id: int, payload: TransactionUpdate, service: FinanceService = Depends(get_finance_service)):
+def update_transaction(
+    transaction_id: int, payload: TransactionUpdate, service: FinanceService = Depends(get_finance_service)
+):
     if not service.get_transaction(transaction_id):
         raise HTTPException(status_code=404, detail="Transaction not found")
     try:

@@ -8,8 +8,8 @@ from .base_repository import BaseRepository
 class AccountRepository(BaseRepository):
     def list(self, include_inactive: bool = False):
         where = "" if include_inactive else "WHERE a.active=1"
-        rows = self.conn.execute(
-            f"""
+        # The only interpolated fragment is the fixed active-account clause above.
+        account_sql = f"""
             SELECT a.id, a.name, a.type, a.currency, a.opening_balance_cents, a.active,
                    a.created_at,
                    a.opening_balance_cents
@@ -28,7 +28,7 @@ class AccountRepository(BaseRepository):
             {where}
             ORDER BY a.active DESC, a.name
             """
-        ).fetchall()
+        rows = self.conn.execute(account_sql).fetchall()
         return [self._to_domain(row).to_dict() for row in rows]
 
     def get(self, account_id: int):
@@ -42,9 +42,7 @@ class AccountRepository(BaseRepository):
         if not name:
             raise ValueError("Account name is required")
         if payload.currency != self.base_currency:
-            raise ValueError(
-                f"Account currency must match the base currency ({self.base_currency})"
-            )
+            raise ValueError(f"Account currency must match the base currency ({self.base_currency})")
         opening_balance = Money.from_amount(payload.opening_balance, payload.currency)
         with self.conn:
             cursor = self.conn.execute(
@@ -63,7 +61,7 @@ class AccountRepository(BaseRepository):
                     datetime.now(UTC).isoformat(),
                 ),
             )
-        return self.get(cursor.lastrowid)
+        return self.get(self.inserted_id(cursor))
 
     def deactivate(self, account_id: int):
         if account_id == self.default_account_id():

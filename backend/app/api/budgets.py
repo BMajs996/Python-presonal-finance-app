@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from .dependencies import get_finance_service
 from ..schemas import BudgetCreate, BudgetUpdate
 from ..services.finance_service import FinanceService
+from .dependencies import get_finance_service
 
 router = APIRouter(prefix="/api/budgets", tags=["budgets"])
 

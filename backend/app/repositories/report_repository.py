@@ -56,16 +56,10 @@ class ReportRepository(BaseRepository):
             "income": income.as_float(),
             "expenses": expenses_total.as_float(),
             "net": net.as_float(),
-            "savings_rate": (
-                round((net.cents / income.cents) * 100, 1)
-                if income.cents
-                else 0.0
-            ),
+            "savings_rate": (round((net.cents / income.cents) * 100, 1) if income.cents else 0.0),
             "comparison": {
                 "income": self._percentage_change(summary["income"], previous["income"]),
-                "expenses": self._percentage_change(
-                    summary["expense"], previous["expense"]
-                ),
+                "expenses": self._percentage_change(summary["expense"], previous["expense"]),
                 "net": self._percentage_change(
                     summary["income"] - summary["expense"],
                     previous["income"] - previous["expense"],
@@ -101,10 +95,7 @@ class ReportRepository(BaseRepository):
     def monthly_data(self, months: int = 12):
         months = min(max(months, 1), 60)
         today = date.today().replace(day=1)
-        labels = [
-            add_months(today, -offset).strftime("%Y-%m")
-            for offset in range(months - 1, -1, -1)
-        ]
+        labels = [add_months(today, -offset).strftime("%Y-%m") for offset in range(months - 1, -1, -1)]
         start_month = labels[0]
         monthly = {
             label: {
@@ -142,10 +133,7 @@ class ReportRepository(BaseRepository):
                     "income": income.as_float(),
                     "expenses": expenses.as_float(),
                     "net": net.as_float(),
-                    "savings_rate": (
-                        round((net.cents / income.cents) * 100, 1)
-                        if income.cents else 0.0
-                    ),
+                    "savings_rate": (round((net.cents / income.cents) * 100, 1) if income.cents else 0.0),
                 }
             )
 
@@ -185,17 +173,11 @@ class ReportRepository(BaseRepository):
 
         series = list(monthly.values())
         total_income = Money(
-            sum(
-                Money.from_amount(item["income"], self.base_currency).cents
-                for item in series
-            ),
+            sum(Money.from_amount(item["income"], self.base_currency).cents for item in series),
             self.base_currency,
         )
         total_expenses = Money(
-            sum(
-                Money.from_amount(item["expenses"], self.base_currency).cents
-                for item in series
-            ),
+            sum(Money.from_amount(item["expenses"], self.base_currency).cents for item in series),
             self.base_currency,
         )
         net = total_income - total_expenses
@@ -209,8 +191,7 @@ class ReportRepository(BaseRepository):
                 "expenses": total_expenses.as_float(),
                 "net": net.as_float(),
                 "savings_rate": (
-                    round((net.cents / total_income.cents) * 100, 1)
-                    if total_income.cents else 0.0
+                    round((net.cents / total_income.cents) * 100, 1) if total_income.cents else 0.0
                 ),
             },
         }
@@ -219,21 +200,23 @@ class ReportRepository(BaseRepository):
         if not categories:
             return {}
         placeholders = ",".join("?" for _ in categories)
+        # Only placeholder tokens are interpolated; category values remain bound parameters.
+        trend_sql = f"""
+            SELECT strftime('%Y-%m', t.date) month,
+                   t.category,
+                   SUM(t.amount_cents) total_cents
+            FROM transactions t
+            JOIN accounts a ON a.id=t.account_id
+            WHERE t.type='expense'
+              AND strftime('%Y-%m', t.date) >= ?
+              AND t.category IN ({placeholders})
+              AND a.currency=?
+            GROUP BY month, t.category
+            """
         return {
             (row["month"], row["category"]): int(row["total_cents"] or 0)
             for row in self.conn.execute(
-                f"""
-                SELECT strftime('%Y-%m', t.date) month,
-                       t.category,
-                       SUM(t.amount_cents) total_cents
-                FROM transactions t
-                JOIN accounts a ON a.id=t.account_id
-                WHERE t.type='expense'
-                  AND strftime('%Y-%m', t.date) >= ?
-                  AND t.category IN ({placeholders})
-                  AND a.currency=?
-                GROUP BY month, t.category
-                """,
+                trend_sql,
                 (start_month, *categories, self.base_currency),
             ).fetchall()
         }
