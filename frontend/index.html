@@ -44,25 +44,34 @@
 
     <section id="dashboard-view" class="view">
       <div class="cards">
-        <article class="card">
+        <article class="card metric-card">
           <span>Current balance</span>
           <strong id="balance">$0.00</strong>
-          <small>All recorded transactions</small>
+          <div class="metric-footer"><small id="balance-context">Across all accounts</small></div>
         </article>
-        <article class="card">
-          <span>Total income</span>
+        <article class="card metric-card">
+          <span>Income</span>
           <strong id="income">$0.00</strong>
-          <small>Lifetime income</small>
+          <div class="metric-footer">
+            <small id="income-context">Selected period</small>
+            <small id="income-change" class="metric-change neutral">No prior activity</small>
+          </div>
         </article>
-        <article class="card">
-          <span>Total expenses</span>
+        <article class="card metric-card">
+          <span>Expenses</span>
           <strong id="expenses">$0.00</strong>
-          <small>Lifetime expenses</small>
+          <div class="metric-footer">
+            <small id="expenses-context">Selected period</small>
+            <small id="expenses-change" class="metric-change neutral">No prior activity</small>
+          </div>
         </article>
-        <article class="card">
+        <article class="card metric-card">
           <span>Net</span>
           <strong id="net">$0.00</strong>
-          <small>Income minus expenses</small>
+          <div class="metric-footer">
+            <small id="net-context">0% savings rate</small>
+            <small id="net-change" class="metric-change neutral">No prior activity</small>
+          </div>
         </article>
       </div>
 
@@ -87,7 +96,7 @@
           <div class="panel-head">
             <div>
               <h2>Expenses by category</h2>
-              <p>All recorded expenses</p>
+              <p id="expense-period-label">Selected period</p>
             </div>
           </div>
           <canvas id="expense-chart"></canvas>
@@ -118,7 +127,7 @@
         </section>
       </div>
 
-      <div class="grid two">
+      <div class="grid">
         <section class="panel">
           <div class="panel-head">
             <div>
@@ -148,7 +157,6 @@
         </div>
 
         <div class="filters">
-          <input id="search" placeholder="Search description or category">
           <select id="type-filter">
             <option value="">All types</option>
             <option value="income">Income</option>

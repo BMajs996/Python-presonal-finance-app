@@ -68,7 +68,7 @@ finance-dashboard/
 
 Useful endpoints:
 
-- `GET /api/dashboard`
+- `GET /api/dashboard?days=30` (period metrics, prior-period comparisons, and balance history)
 - `GET /api/transactions`
 - `POST /api/transactions`
 - `PUT /api/transactions/{id}`
@@ -91,6 +91,10 @@ Useful endpoints:
 - `DELETE /api/transfers/{id}`
 
 Swagger documentation is available at `/docs`.
+
+Currency values use the configured base currency and are formatted in the browser
+using the user's locale. Changing the dashboard range updates income, expenses, net,
+savings rate, category spending, comparisons, and balance history together.
 
 ## GitHub
 

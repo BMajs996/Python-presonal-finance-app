@@ -155,10 +155,13 @@ class BudgetResponse(BaseModel):
 
 class DashboardResponse(BaseModel):
     currency: str
+    period: dict
     balance: float
     income: float
     expenses: float
     net: float
+    savings_rate: float
+    comparison: dict
     expense_categories: list[dict]
     balance_history: list[dict]
     recent_transactions: list[dict]

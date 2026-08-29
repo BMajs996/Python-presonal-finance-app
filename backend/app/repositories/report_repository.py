@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from ..domain.money import Money
 from ..domain.recurrence import add_months
@@ -15,19 +15,14 @@ class ReportRepository(BaseRepository):
         self.budgets = BudgetRepository(connection, base_currency)
         self.transactions = TransactionRepository(connection, base_currency)
 
-    def dashboard_data(self):
-        summary = {"income": 0, "expense": 0}
-        for row in self.conn.execute(
-            """
-            SELECT t.type, COALESCE(SUM(t.amount_cents),0) total_cents
-            FROM transactions t
-            JOIN accounts a ON a.id=t.account_id
-            WHERE a.currency=?
-            GROUP BY t.type
-            """,
-            (self.base_currency,),
-        ):
-            summary[row["type"]] = int(row["total_cents"] or 0)
+    def dashboard_data(self, days: int = 30):
+        today = date.today()
+        period_start = today - timedelta(days=days - 1)
+        previous_end = period_start - timedelta(days=1)
+        previous_start = previous_end - timedelta(days=days - 1)
+
+        summary = self._period_summary(period_start, today)
+        previous = self._period_summary(previous_start, previous_end)
 
         expenses = [
             {
@@ -40,25 +35,68 @@ class ReportRepository(BaseRepository):
                 FROM transactions t
                 JOIN accounts a ON a.id=t.account_id
                 WHERE t.type='expense' AND a.currency=?
+                  AND t.date BETWEEN ? AND ?
                 GROUP BY t.category
                 ORDER BY total_cents DESC
                 """,
-                (self.base_currency,),
+                (self.base_currency, period_start.isoformat(), today.isoformat()),
             )
         ]
         recent, _ = self.transactions.list(limit=8)
         income = Money(summary["income"], self.base_currency)
         expenses_total = Money(summary["expense"], self.base_currency)
+        net = income - expenses_total
         return {
             "currency": self.base_currency,
+            "period": {
+                "days": days,
+                "start": period_start.isoformat(),
+                "end": today.isoformat(),
+            },
             "income": income.as_float(),
             "expenses": expenses_total.as_float(),
-            "net": (income - expenses_total).as_float(),
+            "net": net.as_float(),
+            "savings_rate": (
+                round((net.cents / income.cents) * 100, 1)
+                if income.cents
+                else 0.0
+            ),
+            "comparison": {
+                "income": self._percentage_change(summary["income"], previous["income"]),
+                "expenses": self._percentage_change(
+                    summary["expense"], previous["expense"]
+                ),
+                "net": self._percentage_change(
+                    summary["income"] - summary["expense"],
+                    previous["income"] - previous["expense"],
+                ),
+            },
             "expense_categories": expenses,
             "recent_transactions": recent,
             "budgets": self.budgets.usage(),
             "accounts": self.accounts.list(),
         }
+
+    def _period_summary(self, start: date, end: date) -> dict[str, int]:
+        summary = {"income": 0, "expense": 0}
+        for row in self.conn.execute(
+            """
+            SELECT t.type, COALESCE(SUM(t.amount_cents),0) total_cents
+            FROM transactions t
+            JOIN accounts a ON a.id=t.account_id
+            WHERE a.currency=? AND t.date BETWEEN ? AND ?
+            GROUP BY t.type
+            """,
+            (self.base_currency, start.isoformat(), end.isoformat()),
+        ):
+            summary[row["type"]] = int(row["total_cents"] or 0)
+        return summary
+
+    @staticmethod
+    def _percentage_change(current: int, previous: int) -> float | None:
+        if previous == 0:
+            return None
+        return round(((current - previous) / abs(previous)) * 100, 1)
 
     def monthly_data(self, months: int = 12):
         months = min(max(months, 1), 60)

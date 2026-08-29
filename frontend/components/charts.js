@@ -1,5 +1,5 @@
 import { $ } from "../utils/dom.js";
-import { money } from "../utils/money.js";
+import { compactMoney, money } from "../utils/money.js";
 
 const charts = new Map();
 
@@ -9,7 +9,14 @@ function replaceChart(id, configuration) {
 }
 
 const currencyAxis = {
-  ticks: { callback: (value) => money(value) },
+  ticks: { callback: (value) => compactMoney(value) },
+  grid: { color: "rgba(116, 128, 148, .14)" },
+};
+
+const currencyTooltip = {
+  callbacks: {
+    label: (context) => `${context.dataset.label || context.label}: ${money(context.raw)}`,
+  },
 };
 
 export function renderDashboardCharts(data) {
@@ -21,24 +28,48 @@ export function renderDashboardCharts(data) {
         label: "Balance",
         data: data.balance_history.map((item) => item.balance),
         borderWidth: 2,
+        borderColor: "#3b63f3",
+        backgroundColor: "rgba(59, 99, 243, .08)",
+        pointRadius: 0,
+        pointHoverRadius: 4,
         tension: 0.35,
         fill: true,
       }],
     },
     options: {
       responsive: true,
-      plugins: { legend: { display: false } },
+      interaction: { intersect: false, mode: "index" },
+      plugins: { legend: { display: false }, tooltip: currencyTooltip },
       scales: { y: currencyAxis },
     },
   });
 
+  const hasExpenses = data.expense_categories.length > 0;
   replaceChart("expense-chart", {
     type: "doughnut",
     data: {
-      labels: data.expense_categories.map((item) => item.category),
-      datasets: [{ data: data.expense_categories.map((item) => item.total), borderWidth: 0 }],
+      labels: hasExpenses
+        ? data.expense_categories.map((item) => item.category)
+        : ["No expenses"],
+      datasets: [{
+        label: "Expenses",
+        data: hasExpenses
+          ? data.expense_categories.map((item) => item.total)
+          : [1],
+        backgroundColor: hasExpenses
+          ? ["#3b63f3", "#15966d", "#d94b58", "#e7a62b", "#725ac1", "#2b879e"]
+          : ["#e5e9f0"],
+        borderWidth: 0,
+      }],
     },
-    options: { responsive: true, plugins: { legend: { position: "bottom" } } },
+    options: {
+      responsive: true,
+      cutout: "66%",
+      plugins: {
+        legend: { position: "bottom", labels: { usePointStyle: true, boxWidth: 8 } },
+        tooltip: hasExpenses ? currencyTooltip : { enabled: false },
+      },
+    },
   });
 }
 
@@ -53,7 +84,11 @@ export function renderReportCharts(data) {
         { label: "Expenses", data: data.months.map((item) => item.expenses), backgroundColor: "#d94b58" },
       ],
     },
-    options: { responsive: true, scales: { y: { ...currencyAxis, beginAtZero: true } } },
+    options: {
+      responsive: true,
+      plugins: { tooltip: currencyTooltip },
+      scales: { y: { ...currencyAxis, beginAtZero: true } },
+    },
   });
 
   const colors = ["#3b63f3", "#15966d", "#d94b58", "#e7a62b", "#725ac1"];
@@ -69,7 +104,11 @@ export function renderReportCharts(data) {
         tension: 0.3,
       })),
     },
-    options: { responsive: true, scales: { y: { ...currencyAxis, beginAtZero: true } } },
+    options: {
+      responsive: true,
+      plugins: { tooltip: currencyTooltip },
+      scales: { y: { ...currencyAxis, beginAtZero: true } },
+    },
   });
 
   replaceChart("net-worth-chart", {
@@ -87,7 +126,7 @@ export function renderReportCharts(data) {
     },
     options: {
       responsive: true,
-      plugins: { legend: { display: false } },
+      plugins: { legend: { display: false }, tooltip: currencyTooltip },
       scales: { y: currencyAxis },
     },
   });

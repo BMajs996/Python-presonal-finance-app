@@ -19,7 +19,6 @@ let csvPreviewRows = [];
 function filterParams() {
   validateDateRange($("date-start-filter").value, $("date-end-filter").value);
   const params = new URLSearchParams({
-    search: $("search").value,
     type: $("type-filter").value,
     category: $("category-filter").value,
   });
