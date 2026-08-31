@@ -10,9 +10,10 @@ from .transfer_repository import TransferRepository
 class FinanceRepository:
     """Compatibility facade over feature-owned repositories."""
 
-    def __init__(self, database, base_currency: str = "USD"):
+    def __init__(self, database, base_currency: str = "USD", *, connection=None):
         self.database = database
-        connection = database.conn
+        connection = database.conn if connection is None else connection
+        self.conn = connection
         self.base_currency = base_currency
         main_currency = connection.execute(
             "SELECT currency FROM accounts WHERE name='Main Account'"
@@ -97,4 +98,4 @@ class FinanceRepository:
         return self.recurring_transactions.process_due()
 
     def close(self):
-        self.database.close()
+        self.conn.close()

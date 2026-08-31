@@ -36,10 +36,15 @@ def test_settings_normalize_currency_and_parse_cors_origins():
         Settings(base_currency="US1", _env_file=None)
 
 
-def test_finance_service_dependency_reads_application_state(finance_service):
-    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(finance_service=finance_service)))
+def test_finance_service_dependency_builds_service_from_database(db):
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(database=db.database)))
+    dependency = get_finance_service(request)
 
-    assert get_finance_service(request) is finance_service
+    service = next(dependency)
+    assert service.accounts()[0]["name"] == "Main Account"
+    assert service.transactions_service.repository.conn is not db.database.conn
+
+    dependency.close()
 
 
 def test_transaction_handlers_map_invalid_ranges_and_missing_records(finance_service):
