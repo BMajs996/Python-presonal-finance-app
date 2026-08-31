@@ -9,20 +9,18 @@ from .api import accounts, budgets, dashboard, recurring, reports, transactions,
 from .core.config import settings
 from .database import FinanceDatabase
 from .repositories.finance_repository import FinanceRepository
-from .services.finance_service import FinanceService
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database = FinanceDatabase(settings.database_path, settings.base_currency)
-    repository = FinanceRepository(database, settings.base_currency)
-    repository.process_recurring_transactions()
-    app.state.database = database
-    app.state.finance_service = FinanceService(repository)
     try:
-        yield
+        repository = FinanceRepository(database, settings.base_currency)
+        repository.process_recurring_transactions()
     finally:
         database.close()
+    app.state.database = database
+    yield
 
 
 app = FastAPI(

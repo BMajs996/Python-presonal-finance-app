@@ -186,6 +186,11 @@ Schema migrations are tracked in `schema_migrations`. On startup the application
 
 For safety, keep `data/*.db` out of Git. The repository contains no personal financial data.
 
+SQLite runs in WAL mode with foreign-key enforcement and a bounded busy timeout. API requests receive
+independent database connections that are rolled back and closed at the end of each request. This keeps
+concurrent readers responsive and prevents one shared connection from crossing request boundaries. Repository
+writes use explicit connection scopes with `IMMEDIATE` transactions and automatic commit or rollback.
+
 ## Backup and recovery
 
 Run the maintenance commands from the repository root with the application stopped for restore operations.
