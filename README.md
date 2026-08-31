@@ -185,3 +185,40 @@ Accounts can be deactivated without deleting their historical transactions. `Mai
 Schema migrations are tracked in `schema_migrations`. On startup the application upgrades older databases automatically. Migration 1 creates accounts/transfers and assigns legacy records to `Main Account`. Migration 2 adds and backfills integer-cent columns for every monetary field without deleting the legacy values.
 
 For safety, keep `data/*.db` out of Git. The repository contains no personal financial data.
+
+## Backup and recovery
+
+Run the maintenance commands from the repository root with the application stopped for restore operations.
+
+```bash
+# Verify SQLite pages, foreign keys, and the schema version.
+python -m backend.app.maintenance integrity
+
+# Create a timestamped archive in data/backups/.
+python -m backend.app.maintenance backup
+
+# Create a backup in a chosen directory or file.
+python -m backend.app.maintenance backup /secure/backup/location
+python -m backend.app.maintenance backup /secure/finance.financebackup
+
+# Restore after stopping the application. This requires explicit confirmation.
+python -m backend.app.maintenance restore /secure/finance.financebackup --yes
+```
+
+Use `--database PATH` after the command to operate on a non-default database. Every archive contains a
+versioned manifest, database size, schema version, and SHA-256 checksum. Restore verifies those values,
+SQLite integrity, foreign keys, and schema compatibility before replacing the database. If the destination
+already exists, restore first creates a `pre-restore-*.financebackup` safety archive in `data/backups/`.
+If the existing database is corrupted and cannot be archived normally, restore preserves its raw database
+and sidecar files as `pre-restore-corrupt-*` forensic copies before replacement.
+
+Test recovery without touching live data:
+
+```bash
+python -m backend.app.maintenance restore data/backups/<archive>.financebackup \
+  --database /tmp/finance-restore-test.db --yes
+python -m backend.app.maintenance integrity --database /tmp/finance-restore-test.db
+```
+
+Backup archives contain unencrypted financial data. Store them in an access-controlled or encrypted
+location, never commit them, and periodically perform the restore drill above.
