@@ -7,7 +7,7 @@ existing desktop-era database without requiring a separate migration command.
 import sqlite3
 from datetime import UTC, datetime
 
-LATEST_SCHEMA_VERSION = 2
+LATEST_SCHEMA_VERSION = 3
 
 
 def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
@@ -122,6 +122,18 @@ def _migration_2_integer_money(
         conn.execute(backfill_sql)
 
 
+def _migration_3_recurring_occurrences(conn: sqlite3.Connection, _base_currency: str) -> None:
+    conn.execute(
+        """
+        CREATE TABLE recurring_occurrences (
+            recurring_id INTEGER NOT NULL REFERENCES recurring_transactions(id) ON DELETE RESTRICT,
+            due_date TEXT NOT NULL,
+            PRIMARY KEY (recurring_id, due_date)
+        )
+        """
+    )
+
+
 def migrate(conn: sqlite3.Connection, base_currency: str = "USD") -> int:
     """Apply all migrations and return the resulting schema version."""
     conn.execute(
@@ -138,6 +150,7 @@ def migrate(conn: sqlite3.Connection, base_currency: str = "USD") -> int:
     migrations = {
         1: _migration_1_accounts_and_transfers,
         2: _migration_2_integer_money,
+        3: _migration_3_recurring_occurrences,
     }
     for version in range(current + 1, LATEST_SCHEMA_VERSION + 1):
         migration = migrations[version]

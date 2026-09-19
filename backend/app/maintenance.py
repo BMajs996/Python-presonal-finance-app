@@ -1,10 +1,13 @@
 import argparse
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
 from .core.config import settings
+from .database import FinanceDatabase
 from .services.backup_service import BackupError, BackupService
+from .services.recurring_runner import process_recurring
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -27,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     commands.add_parser("integrity", parents=[common], help="Check SQLite and foreign-key integrity")
+    commands.add_parser("process-recurring", parents=[common], help="Process due recurring transactions")
 
     restore = commands.add_parser("restore", parents=[common], help="Restore a verified backup archive")
     restore.add_argument("backup", type=Path, help="Backup archive to restore")
@@ -44,6 +48,13 @@ def main(argv: list[str] | None = None) -> int:
     service = BackupService(args.database)
 
     try:
+        if args.command == "process-recurring":
+            database = FinanceDatabase(args.database, settings.base_currency)
+            database.close()
+            created = process_recurring(database)
+            _print_json({"status": "ok", "created": created})
+            return 0
+
         if args.command == "integrity":
             report = service.integrity_check()
             _print_json(report.to_dict())
@@ -63,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
         result = service.restore_backup(args.backup)
         _print_json({"status": "ok", **result.to_dict()})
         return 0
-    except BackupError as exc:
+    except (BackupError, sqlite3.Error, ValueError, RuntimeError) as exc:
         _print_json({"status": "error", "error": str(exc)}, stream=sys.stderr)
         return 1
 

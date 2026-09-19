@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -8,19 +9,21 @@ from fastapi.staticfiles import StaticFiles
 from .api import accounts, budgets, dashboard, recurring, reports, transactions, transfers
 from .core.config import settings
 from .database import FinanceDatabase
-from .repositories.finance_repository import FinanceRepository
+from .services.recurring_runner import run_recurring
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database = FinanceDatabase(settings.database_path, settings.base_currency)
-    try:
-        repository = FinanceRepository(database, settings.base_currency)
-        repository.process_recurring_transactions()
-    finally:
-        database.close()
+    database.close()
     app.state.database = database
-    yield
+    stop = asyncio.Event()
+    runner = asyncio.create_task(run_recurring(database, stop))
+    try:
+        yield
+    finally:
+        stop.set()
+        await runner
 
 
 app = FastAPI(

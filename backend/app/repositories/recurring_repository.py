@@ -95,27 +95,38 @@ class RecurringRepository(BaseRepository):
 
     def process_due(self, through: date | None = None):
         through = through or date.today()
-        rows = self.conn.execute(
-            """
-            SELECT id, type, category, amount, amount_cents, description,
-                   frequency, next_date, account_id
-            FROM recurring_transactions
-            WHERE active=1 AND next_date <= ?
-            ORDER BY next_date, id
-            """,
-            (through.isoformat(),),
-        ).fetchall()
-
+        if self.conn.in_transaction:
+            raise RuntimeError("Recurring processing requires its own transaction")
+        created = 0
         with self.conn:
+            # Reserve the writer before reading schedules, including across processes.
+            self.conn.execute("BEGIN IMMEDIATE")
+            rows = self.conn.execute(
+                """
+                SELECT id, type, category, amount, amount_cents, description,
+                       frequency, next_date, account_id
+                FROM recurring_transactions
+                WHERE active=1 AND next_date <= ?
+                ORDER BY next_date, id
+                """,
+                (through.isoformat(),),
+            ).fetchall()
             for row in rows:
                 occurrence = date.fromisoformat(row["next_date"])
                 guard = 0
                 while occurrence <= through:
+                    claim = self.conn.execute(
+                        """
+                        INSERT INTO recurring_occurrences(recurring_id, due_date) VALUES (?, ?)
+                        ON CONFLICT(recurring_id, due_date) DO NOTHING
+                        """,
+                        (row["id"], occurrence.isoformat()),
+                    )
                     self.conn.execute(
                         """
                         INSERT INTO transactions
                             (date, type, category, amount, amount_cents, description, account_id)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        SELECT ?, ?, ?, ?, ?, ?, ? WHERE ?
                         """,
                         (
                             occurrence.isoformat(),
@@ -125,8 +136,10 @@ class RecurringRepository(BaseRepository):
                             row["amount_cents"],
                             f"{row['description']} (Auto)".strip(),
                             row["account_id"] or self.default_account_id(),
+                            claim.rowcount == 1,
                         ),
                     )
+                    created += claim.rowcount
                     occurrence = calculate_next_date(row["frequency"], occurrence)
                     guard += 1
                     if guard > 10000:
@@ -138,6 +151,7 @@ class RecurringRepository(BaseRepository):
                     "UPDATE recurring_transactions SET next_date=? WHERE id=?",
                     (occurrence.isoformat(), row["id"]),
                 )
+        return created
 
     @staticmethod
     def _serialize(row):
