@@ -1,37 +1,33 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 
-from ..schemas import RecurringCreate, RecurringUpdate
+from ..domain.errors import NotFound
+from ..schemas import RecurringCreate, RecurringResponse, RecurringUpdate
 from ..services.finance_service import FinanceService
 from .dependencies import get_finance_service
+from .errors import ERROR_RESPONSES
 
-router = APIRouter(prefix="/api/recurring", tags=["recurring"])
+router = APIRouter(prefix="/api/recurring", tags=["recurring"], responses=ERROR_RESPONSES)
 
 
-@router.get("")
+@router.get("", response_model=list[RecurringResponse])
 def recurring(service: FinanceService = Depends(get_finance_service)):
     return service.recurring()
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=RecurringResponse)
 def create_recurring(payload: RecurringCreate, service: FinanceService = Depends(get_finance_service)):
-    try:
-        return service.create_recurring(payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return service.create_recurring(payload)
 
 
-@router.put("/{recurring_id}")
+@router.put("/{recurring_id}", response_model=RecurringResponse)
 def update_recurring(
     recurring_id: int,
     payload: RecurringUpdate,
     service: FinanceService = Depends(get_finance_service),
 ):
-    try:
-        updated = service.update_recurring(recurring_id, payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    updated = service.update_recurring(recurring_id, payload)
     if not updated:
-        raise HTTPException(status_code=404, detail="Recurring transaction not found")
+        raise NotFound("Recurring transaction not found")
     return updated
 
 

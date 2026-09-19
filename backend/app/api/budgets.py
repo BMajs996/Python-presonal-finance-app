@@ -1,23 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 
-from ..schemas import BudgetCreate, BudgetUpdate
+from ..domain.errors import NotFound
+from ..schemas import BudgetCreate, BudgetResponse, BudgetUpdate
 from ..services.finance_service import FinanceService
 from .dependencies import get_finance_service
+from .errors import ERROR_RESPONSES
 
-router = APIRouter(prefix="/api/budgets", tags=["budgets"])
+router = APIRouter(prefix="/api/budgets", tags=["budgets"], responses=ERROR_RESPONSES)
 
 
-@router.get("")
+@router.get("", response_model=list[BudgetResponse])
 def budgets(service: FinanceService = Depends(get_finance_service)):
     return service.budgets()
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=BudgetResponse)
 def create_budget(payload: BudgetCreate, service: FinanceService = Depends(get_finance_service)):
     return service.create_budget(payload)
 
 
-@router.put("/{budget_id}")
+@router.put("/{budget_id}", response_model=BudgetResponse)
 def update_budget(
     budget_id: int,
     payload: BudgetUpdate,
@@ -25,7 +27,7 @@ def update_budget(
 ):
     updated = service.update_budget(budget_id, payload)
     if not updated:
-        raise HTTPException(status_code=404, detail="Budget not found")
+        raise NotFound("Budget not found")
     return updated
 
 

@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from ..domain.errors import InvalidOperation
 from ..domain.money import Money
 from .base_repository import BaseRepository
 
@@ -36,13 +37,13 @@ class TransferRepository(BaseRepository):
 
     def add(self, payload):
         if payload.from_account_id == payload.to_account_id:
-            raise ValueError("Transfer accounts must be different")
+            raise InvalidOperation("Transfer accounts must be different")
         self.resolve_account_id(payload.from_account_id)
         self.resolve_account_id(payload.to_account_id)
         from_currency = self.account_currency(payload.from_account_id)
         to_currency = self.account_currency(payload.to_account_id)
         if from_currency != to_currency:
-            raise ValueError("Transfers between different currencies require an exchange rate")
+            raise InvalidOperation("Transfers between different currencies require an exchange rate")
         amount = Money.from_amount(payload.amount, from_currency)
         with self.conn:
             cursor = self.conn.execute(

@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from ..domain.account import Account
+from ..domain.errors import InvalidOperation
 from ..domain.money import Money
 from .base_repository import BaseRepository
 
@@ -40,9 +41,9 @@ class AccountRepository(BaseRepository):
     def add(self, payload):
         name = payload.name.strip()
         if not name:
-            raise ValueError("Account name is required")
+            raise InvalidOperation("Account name is required")
         if payload.currency != self.base_currency:
-            raise ValueError(f"Account currency must match the base currency ({self.base_currency})")
+            raise InvalidOperation(f"Account currency must match the base currency ({self.base_currency})")
         opening_balance = Money.from_amount(payload.opening_balance, payload.currency)
         with self.conn:
             cursor = self.conn.execute(
@@ -65,7 +66,7 @@ class AccountRepository(BaseRepository):
 
     def deactivate(self, account_id: int):
         if account_id == self.default_account_id():
-            raise ValueError("Main Account cannot be deactivated")
+            raise InvalidOperation("Main Account cannot be deactivated")
         with self.conn:
             self.conn.execute("UPDATE accounts SET active=0 WHERE id=?", (account_id,))
 
