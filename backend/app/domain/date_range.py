@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from datetime import date
 
+from .errors import InvalidOperation
+
 
 @dataclass(frozen=True, slots=True)
 class DateRange:
@@ -9,7 +11,7 @@ class DateRange:
 
     def __post_init__(self):
         if self.start and self.end and self.start > self.end:
-            raise ValueError("Start date cannot be after end date")
+            raise InvalidOperation("Start date cannot be after end date")
 
     @property
     def start_iso(self) -> str:

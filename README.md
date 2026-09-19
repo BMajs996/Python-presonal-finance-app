@@ -191,6 +191,19 @@ independent database connections that are rolled back and closed at the end of e
 concurrent readers responsive and prevents one shared connection from crossing request boundaries. Repository
 writes use explicit connection scopes with `IMMEDIATE` transactions and automatic commit or rollback.
 
+## API contracts
+
+All JSON success responses have explicit Pydantic response models, including nested dashboard and monthly
+report data. The generated OpenAPI contract is available at `/openapi.json` and interactive docs at `/docs`.
+Existing `/api` paths, numeric money values, pagination (`items` and `total`), and empty `204` responses
+remain compatible with the frontend.
+
+Expected domain failures are handled centrally and return `{"detail": "message"}`: invalid operations
+use `400`, missing resources use `404`, and duplicate account names or conflicting budget category updates
+use `409`. Request validation retains FastAPI's `422` response with a list in `detail`. Budget and recurring
+deletion retain their existing idempotent `204` behavior. Unexpected errors are not converted into client
+validation errors, and database constraint details are not exposed in conflict messages.
+
 ## Recurring processing
 
 While the server is running, a background task processes due recurring entries immediately and every

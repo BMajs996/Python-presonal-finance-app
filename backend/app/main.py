@@ -7,8 +7,10 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .api import accounts, budgets, dashboard, recurring, reports, transactions, transfers
+from .api.errors import register_error_handlers
 from .core.config import settings
 from .database import FinanceDatabase
+from .schemas import HealthResponse
 from .services.recurring_runner import run_recurring
 
 
@@ -33,6 +35,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+register_error_handlers(app)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -50,7 +54,7 @@ app.include_router(budgets.router)
 app.include_router(reports.router)
 
 
-@app.get("/api/health", tags=["system"])
+@app.get("/api/health", tags=["system"], response_model=HealthResponse)
 def health():
     return {"status": "ok"}
 

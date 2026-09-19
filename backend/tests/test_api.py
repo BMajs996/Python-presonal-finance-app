@@ -3,6 +3,155 @@ from app.main import app
 from fastapi.testclient import TestClient
 
 
+def test_populated_response_contracts_preserve_service_payloads(client):
+    from datetime import date
+
+    from app.repositories.finance_repository import FinanceRepository
+    from app.services.finance_service import FinanceService
+
+    account = client.post("/api/accounts", json={"name": "Contract savings"}).json()
+    transaction = {
+        "date": date.today().isoformat(),
+        "type": "expense",
+        "category": "Food",
+        "amount": 12.34,
+        "description": "Lunch",
+        "account_id": account["id"],
+    }
+    created = client.post("/api/transactions", json=transaction)
+    assert created.status_code == 201
+    assert client.put(f"/api/transactions/{created.json()['id']}", json=transaction).status_code == 200
+    budget = client.post("/api/budgets", json={"category": "Food", "monthly_limit": 100})
+    assert budget.status_code == 201
+    assert (
+        client.put(
+            f"/api/budgets/{budget.json()['id']}", json={"category": "Food", "monthly_limit": 150}
+        ).status_code
+        == 200
+    )
+    recurring = client.post(
+        "/api/recurring",
+        json={
+            "type": "expense",
+            "category": "Rent",
+            "amount": 50,
+            "frequency": "monthly",
+            "start_date": "2099-01-01",
+        },
+    )
+    assert recurring.status_code == 201
+    assert (
+        client.put(
+            f"/api/recurring/{recurring.json()['id']}",
+            json={
+                "type": "expense",
+                "category": "Rent",
+                "amount": 60,
+                "frequency": "monthly",
+                "next_date": "2099-02-01",
+            },
+        ).status_code
+        == 200
+    )
+    main_id = next(a["id"] for a in client.get("/api/accounts").json() if a["name"] == "Main Account")
+    assert (
+        client.post(
+            "/api/transfers",
+            json={
+                "date": date.today().isoformat(),
+                "from_account_id": main_id,
+                "to_account_id": account["id"],
+                "amount": 1.23,
+            },
+        ).status_code
+        == 201
+    )
+
+    database = app.state.database
+    with database.connection() as connection:
+        service = FinanceService(FinanceRepository(database, connection=connection))
+        items, total = service.list_transactions()
+        expected = {
+            "/api/transactions": {"items": items, "total": total},
+            "/api/accounts": service.accounts(),
+            "/api/budgets": service.budgets(),
+            "/api/recurring": service.recurring(),
+            "/api/transfers": service.transfers(),
+            "/api/dashboard": service.dashboard(),
+            "/api/reports/monthly": service.monthly_report(),
+            "/api/categories": service.categories(),
+        }
+        for path, payload in expected.items():
+            response = client.get(path)
+            assert response.status_code == 200, path
+            assert response.json() == payload, path
+
+
+def test_domain_errors_keep_detail_contract_and_status_codes(client):
+    from datetime import date
+
+    duplicate = client.post("/api/accounts", json={"name": "Main Account"})
+    assert duplicate.status_code == 409
+    assert duplicate.json() == {"detail": "An account with this name already exists"}
+    invalid = client.post(
+        "/api/transactions",
+        json={
+            "date": date.today().isoformat(),
+            "type": "income",
+            "category": "Salary",
+            "amount": 10,
+            "account_id": 99999,
+        },
+    )
+    assert invalid.status_code == 400
+    assert isinstance(invalid.json()["detail"], str)
+    assert client.delete("/api/transactions/99999").json() == {"detail": "Transaction not found"}
+    assert client.delete("/api/accounts/99999").status_code == 404
+    assert client.get("/api/transactions?date_start=2026-09-20&date_end=2026-09-01").status_code == 400
+    invalid_input = client.post("/api/transactions", json={})
+    assert invalid_input.status_code == 422
+    assert isinstance(invalid_input.json()["detail"], list)
+
+
+def test_duplicate_budget_update_returns_conflict_without_changing_budget(client):
+    first = client.post("/api/budgets", json={"category": "Food", "monthly_limit": 100}).json()
+    client.post("/api/budgets", json={"category": "Travel", "monthly_limit": 200})
+    response = client.put(f"/api/budgets/{first['id']}", json={"category": "Travel", "monthly_limit": 50})
+    assert response.status_code == 409
+    assert response.json() == {"detail": "A budget for this category already exists"}
+    assert first in client.get("/api/budgets").json()
+
+
+def test_openapi_declares_every_json_success_and_domain_error(client):
+    schema = client.get("/openapi.json").json()
+    for path, operations in schema["paths"].items():
+        if not path.startswith("/api/"):
+            continue
+        for operation in operations.values():
+            for code, response in operation["responses"].items():
+                if code.startswith("2") and code != "204":
+                    assert response["content"]["application/json"]["schema"], path
+            if path != "/api/health":
+                for code in ("400", "404", "409"):
+                    assert operation["responses"][code]["content"]["application/json"]["schema"] == {
+                        "$ref": "#/components/schemas/ErrorResponse"
+                    }
+
+
+def test_unexpected_value_errors_are_not_reported_as_bad_requests(client):
+    from app.api.dependencies import get_finance_service
+
+    def broken_dependency():
+        raise ValueError("Unexpected internal bug")
+
+    app.dependency_overrides[get_finance_service] = broken_dependency
+    try:
+        with pytest.raises(ValueError, match="Unexpected internal bug"):
+            client.get("/api/accounts")
+    finally:
+        app.dependency_overrides.pop(get_finance_service)
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     from app.core.config import settings

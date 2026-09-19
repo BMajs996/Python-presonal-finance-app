@@ -153,17 +153,91 @@ class BudgetResponse(BaseModel):
     percentage: float
 
 
+class TransactionPage(BaseModel):
+    items: list[TransactionResponse]
+    total: int
+
+
+class RecurringResponse(BaseModel):
+    id: int
+    type: str
+    category: str
+    amount: float
+    description: str | None
+    frequency: str
+    next_date: str
+    active: int
+    account_id: int | None
+    account_name: str | None
+    currency: str
+
+
+class PeriodResponse(BaseModel):
+    days: int
+    start: str
+    end: str
+
+
+class ComparisonResponse(BaseModel):
+    income: float | None
+    expenses: float | None
+    net: float | None
+
+
+class CategoryTotal(BaseModel):
+    category: str
+    total: float
+
+
+class BalancePoint(BaseModel):
+    date: str
+    balance: float
+
+
+class ReportSummary(BaseModel):
+    income: float
+    expenses: float
+    net: float
+    savings_rate: float
+
+
+class MonthlyPoint(ReportSummary):
+    month: str
+    balance: float
+
+
+class CategoryTrend(BaseModel):
+    category: str
+    totals: list[float]
+
+
+class MonthlyReportResponse(BaseModel):
+    currency: str
+    months: list[MonthlyPoint]
+    top_categories: list[CategoryTotal]
+    category_trends: list[CategoryTrend]
+    summary: ReportSummary
+
+
+class ErrorResponse(BaseModel):
+    detail: str
+
+
+class HealthResponse(BaseModel):
+    status: Literal["ok"]
+
+
 class DashboardResponse(BaseModel):
     currency: str
-    period: dict
+    period: PeriodResponse
     balance: float
     income: float
     expenses: float
     net: float
     savings_rate: float
-    comparison: dict
-    expense_categories: list[dict]
-    balance_history: list[dict]
-    recent_transactions: list[dict]
-    budgets: list[dict]
-    accounts: list[dict]
+    comparison: ComparisonResponse
+    expense_categories: list[CategoryTotal]
+    balance_history: list[BalancePoint]
+    recent_transactions: list[TransactionResponse]
+    budgets: list[BudgetResponse]
+    accounts: list[AccountResponse]
