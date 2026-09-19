@@ -2,6 +2,7 @@ from datetime import date
 
 import pytest
 from app.domain.recurrence import add_months, calculate_next_date
+from app.migrations import LATEST_SCHEMA_VERSION
 
 
 def test_add_months_handles_end_of_month():
@@ -95,7 +96,7 @@ def test_dashboard_calculates_balance_income_expenses_and_net(db, finance_servic
 
     db.add_transaction(
         TransactionCreate(
-            date=date(2026, 8, 20),
+            date=date.today(),
             type="income",
             category="Salary",
             amount=3000,
@@ -103,7 +104,7 @@ def test_dashboard_calculates_balance_income_expenses_and_net(db, finance_servic
     )
     db.add_transaction(
         TransactionCreate(
-            date=date(2026, 8, 21),
+            date=date.today(),
             type="expense",
             category="Food",
             amount=100,
@@ -111,7 +112,7 @@ def test_dashboard_calculates_balance_income_expenses_and_net(db, finance_servic
     )
     db.add_transaction(
         TransactionCreate(
-            date=date(2026, 8, 22),
+            date=date.today(),
             type="expense",
             category="Transport",
             amount=200,
@@ -372,7 +373,10 @@ def test_legacy_database_is_migrated_without_changing_balance(tmp_path):
     database = FinanceDatabase(legacy_path)
     repository = FinanceRepository(database)
     try:
-        assert database.conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 2
+        assert (
+            database.conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
+            == LATEST_SCHEMA_VERSION
+        )
         assert database.conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 1
         assert (
             database.conn.execute(

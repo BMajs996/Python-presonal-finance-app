@@ -2,7 +2,7 @@ from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pytest
-from app.migrations import migrate
+from app.migrations import LATEST_SCHEMA_VERSION, migrate
 from app.repositories.base_repository import BaseRepository
 from app.schemas import (
     AccountCreate,
@@ -147,8 +147,8 @@ def test_repository_missing_record_and_account_failure_paths(db):
 
 
 def test_migration_is_idempotent_and_insert_id_requires_a_value(db):
-    assert migrate(db.database.conn, db.base_currency) == 2
-    assert migrate(db.database.conn, db.base_currency) == 2
+    assert migrate(db.database.conn, db.base_currency) == LATEST_SCHEMA_VERSION
+    assert migrate(db.database.conn, db.base_currency) == LATEST_SCHEMA_VERSION
 
     with pytest.raises(RuntimeError, match="did not return an id"):
         BaseRepository.inserted_id(SimpleNamespace(lastrowid=None))

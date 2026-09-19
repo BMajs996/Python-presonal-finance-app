@@ -191,6 +191,26 @@ independent database connections that are rolled back and closed at the end of e
 concurrent readers responsive and prevents one shared connection from crossing request boundaries. Repository
 writes use explicit connection scopes with `IMMEDIATE` transactions and automatic commit or rollback.
 
+## Recurring processing
+
+While the server is running, a background task processes due recurring entries immediately and every
+60 seconds thereafter. It uses a separate connection and retries failures on the next interval.
+Shutdown waits for an active processing pass to finish. Multiple workers can run safely: each pass
+locks before reading schedules, and migration 3 adds a unique occurrence ledger keyed by schedule and
+due date. The ledger, generated entries, and schedule advancement commit together or roll back together.
+Deleting a generated transaction does not delete its occurrence record or cause it to be recreated.
+
+For manual processing or an external scheduler while the server is stopped:
+
+```bash
+python -m backend.app.maintenance process-recurring
+```
+
+Use `--database PATH` to select a database. The JSON result includes the number of entries created.
+Historical generated transactions are preserved without guessed source links; occurrence tracking begins
+at each existing schedule's next due date after upgrading. Rewinding schedules into dates processed before
+the upgrade can therefore produce duplicates. First due dates and existing month-end rules are unchanged.
+
 ## Backup and recovery
 
 Run the maintenance commands from the repository root with the application stopped for restore operations.
