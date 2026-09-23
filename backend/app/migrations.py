@@ -7,7 +7,15 @@ existing desktop-era database without requiring a separate migration command.
 import sqlite3
 from datetime import UTC, datetime
 
-LATEST_SCHEMA_VERSION = 3
+LATEST_SCHEMA_VERSION = 4
+
+MONEY_COLUMNS = (
+    ("transactions", "amount", "amount_cents"),
+    ("recurring_transactions", "amount", "amount_cents"),
+    ("budgets", "monthly_limit", "monthly_limit_cents"),
+    ("accounts", "opening_balance", "opening_balance_cents"),
+    ("transfers", "amount", "amount_cents"),
+)
 
 
 def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
@@ -134,6 +142,44 @@ def _migration_3_recurring_occurrences(conn: sqlite3.Connection, _base_currency:
     )
 
 
+def _invalid_money(legacy: str, cents: str, allow_negative: bool) -> str:
+    conditions = [
+        f"typeof({cents}) <> 'integer'",
+        f"typeof({legacy}) NOT IN ('integer', 'real')",
+        f"{legacy} <> {cents} / 100.0",
+    ]
+    if not allow_negative:
+        conditions.append(f"{cents} <= 0")
+    return " OR ".join(conditions)
+
+
+def _migration_4_money_constraints(conn: sqlite3.Connection, _base_currency: str) -> None:
+    # Explicitly start a transaction before DDL so failed upgrades leave no partial guards.
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
+    for table, legacy, cents in MONEY_COLUMNS:
+        invalid = _invalid_money(legacy, cents, table == "accounts")
+        # Identifiers and predicates come only from fixed schema definitions.
+        row = conn.execute(f"SELECT id FROM {table} WHERE {invalid} LIMIT 1").fetchone()  # nosec B608
+        if row is not None:
+            raise ValueError(
+                f"Money validation failed in {table}, row {row[0]}; "
+                "restore a verified backup or repair the row before retrying the upgrade"
+            )
+        new_invalid = _invalid_money(f"NEW.{legacy}", f"NEW.{cents}", table == "accounts")
+        for operation in ("INSERT", "UPDATE"):
+            conn.execute(
+                f"""
+                CREATE TRIGGER money_{table}_{operation.lower()}
+                BEFORE {operation} ON {table}
+                WHEN {new_invalid}
+                BEGIN
+                    SELECT RAISE(ABORT, 'Invalid or inconsistent money values');
+                END
+                """
+            )
+
+
 def migrate(conn: sqlite3.Connection, base_currency: str = "USD") -> int:
     """Apply all migrations and return the resulting schema version."""
     conn.execute(
@@ -151,6 +197,7 @@ def migrate(conn: sqlite3.Connection, base_currency: str = "USD") -> int:
         1: _migration_1_accounts_and_transfers,
         2: _migration_2_integer_money,
         3: _migration_3_recurring_occurrences,
+        4: _migration_4_money_constraints,
     }
     for version in range(current + 1, LATEST_SCHEMA_VERSION + 1):
         migration = migrations[version]
