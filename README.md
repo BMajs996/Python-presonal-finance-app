@@ -191,6 +191,24 @@ independent database connections that are rolled back and closed at the end of e
 concurrent readers responsive and prevents one shared connection from crossing request boundaries. Repository
 writes use explicit connection scopes with `IMMEDIATE` transactions and automatic commit or rollback.
 
+## Money constraints and upgrades
+
+Migration 4 validates every money column before installing SQLite insert/update guards. Cent values
+must be non-null integers; transaction amounts, recurring amounts, transfer amounts, and budget limits
+must be positive. Account opening balances may be zero or negative. Legacy decimal columns must agree
+with the cent value divided by 100, so writes cannot silently change only one representation.
+
+These rules are enforced with database triggers, including for direct SQL and separate connections.
+The existing tables, IDs, indexes, and foreign keys are preserved; legacy column metadata is unchanged
+rather than rebuilt with new NOT NULL declarations. Cents remain the source used for calculations,
+and application writes continue supplying both representations.
+
+Create a verified backup before upgrading. If an existing row violates these rules, startup stops with
+its table and row ID; migration 4 rolls back its guards and version marker without changing financial
+rows. Review and repair the identified data or restore a verified backup before retrying.
+Legacy-only writers, including the archived desktop application, cannot write new monetary rows to
+an upgraded database without supplying valid matching cent columns.
+
 ## API contracts
 
 All JSON success responses have explicit Pydantic response models, including nested dashboard and monthly

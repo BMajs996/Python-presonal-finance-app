@@ -7,7 +7,7 @@ from threading import Barrier
 
 import pytest
 from app.maintenance import main
-from app.migrations import migrate
+from app.migrations import LATEST_SCHEMA_VERSION, MONEY_COLUMNS, migrate
 from app.repositories.recurring_repository import RecurringRepository
 from app.schemas import RecurringCreate
 from app.services import recurring_runner
@@ -96,9 +96,12 @@ def test_version_two_upgrade_preserves_existing_schedule_and_money(db):
     db.recurring_transactions.process_due(date(2026, 2, 1))
     before = db.list_transactions()
     with conn:
+        for table, _, _ in MONEY_COLUMNS:
+            for operation in ("insert", "update"):
+                conn.execute(f"DROP TRIGGER money_{table}_{operation}")
         conn.execute("DROP TABLE recurring_occurrences")
-        conn.execute("DELETE FROM schema_migrations WHERE version=3")
-    assert migrate(conn) == 3
+        conn.execute("DELETE FROM schema_migrations WHERE version>=3")
+    assert migrate(conn) == LATEST_SCHEMA_VERSION
     assert db.list_transactions() == before
     assert db.recurring_transactions.get(schedule["id"])["next_date"] == "2026-03-01"
     assert db.recurring_transactions.process_due(date(2026, 3, 1)) == 1

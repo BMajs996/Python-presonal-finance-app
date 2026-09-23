@@ -246,10 +246,12 @@ def test_missing_transaction_returns_404(client):
 
 
 def test_dashboard_endpoint(client):
+    from datetime import date
+
     client.post(
         "/api/transactions",
         json={
-            "date": "2026-08-23",
+            "date": date.today().isoformat(),
             "type": "income",
             "category": "Salary",
             "amount": 1000,
