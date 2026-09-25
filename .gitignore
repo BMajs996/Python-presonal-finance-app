@@ -22,3 +22,8 @@ data/backups/
 .coverage
 coverage.xml
 htmlcov/
+
+# Frontend tooling
+node_modules/
+playwright-report/
+test-results/

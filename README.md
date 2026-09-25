@@ -278,3 +278,31 @@ python -m backend.app.maintenance integrity --database /tmp/finance-restore-test
 
 Backup archives contain unencrypted financial data. Store them in an access-controlled or encrypted
 location, never commit them, and periodically perform the restore drill above.
+
+## Frontend tests
+
+Node.js 22 and the backend development dependencies are required.
+
+```bash
+npm ci
+npm test
+npx playwright install chromium
+npm run test:e2e
+```
+
+Unit tests cover CSV quoting, output escaping, currency formatting, API errors, and calendar dates in
+multiple timezones. Browser tests exercise transaction creation/editing/deletion, CSV preview and export,
+transfer neutrality, chart rendering, and failed submissions on desktop and emulated mobile Chromium.
+
+Each browser test launches its own real FastAPI server on an ephemeral loopback port with a temporary
+database. It does not use your running application or personal finance database. External browser requests
+are blocked to verify local chart loading. Set E2E_PYTHON to choose a Python executable; by default the tests
+use .venv/bin/python when available, otherwise python from PATH.
+
+Failures retain screenshots and traces in test-results/ and an HTML report in playwright-report/.
+Run `npx playwright show-report` to inspect results. CI runs both suites within the required Quality job
+and uploads browser diagnostics on failure. All test records are synthetic.
+
+Chart.js 4.5.1 and its license are vendored under frontend/vendor/, so ordinary application startup does
+not require Node.js or CDN access. Regenerate those files with `npm run vendor:charts` after an intentional
+dependency update and commit them with package-lock.json.
