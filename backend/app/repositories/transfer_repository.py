@@ -52,7 +52,7 @@ class TransferRepository(BaseRepository):
                     date, from_account_id, to_account_id, amount, amount_cents,
                     description, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id
                 """,
                 (
                     payload.date.isoformat(),
@@ -64,7 +64,8 @@ class TransferRepository(BaseRepository):
                     datetime.now(UTC).isoformat(),
                 ),
             )
-        return self.get(self.inserted_id(cursor))
+            transfer_id = self.inserted_id(cursor)
+        return self.get(transfer_id)
 
     def delete(self, transfer_id: int):
         with self.conn:

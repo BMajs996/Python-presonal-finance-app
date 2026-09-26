@@ -18,6 +18,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: finance
+          POSTGRES_PASSWORD: ci-test-only
+          POSTGRES_DB: finance_dashboard_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U finance -d finance_dashboard_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://finance:ci-test-only@127.0.0.1:5432/finance_dashboard_test
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -45,6 +60,10 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Browser workflows
         run: npm run test:e2e
+      - name: PostgreSQL browser workflows
+        run: npm run test:e2e
+        env:
+          E2E_DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
       - name: Upload browser diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

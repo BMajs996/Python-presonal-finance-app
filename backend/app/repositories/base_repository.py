@@ -1,10 +1,10 @@
-import sqlite3
+from typing import Any
 
 from ..domain.errors import InvalidOperation
 
 
 class BaseRepository:
-    def __init__(self, connection: sqlite3.Connection, base_currency: str = "USD"):
+    def __init__(self, connection: Any, base_currency: str = "USD"):
         self.conn = connection
         self.base_currency = base_currency
 
@@ -28,7 +28,8 @@ class BaseRepository:
         return row["currency"]
 
     @staticmethod
-    def inserted_id(cursor: sqlite3.Cursor) -> int:
-        if cursor.lastrowid is None:
+    def inserted_id(cursor: Any) -> int:
+        row = cursor.fetchone()
+        if row is None:
             raise RuntimeError("Database insert did not return an id")
-        return cursor.lastrowid
+        return int(row["id"])

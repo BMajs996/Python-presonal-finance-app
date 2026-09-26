@@ -1,9 +1,11 @@
 import sqlite3
 from typing import Any
 
+import psycopg
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from ..database_errors import constraint_message
 from ..domain.errors import Conflict, DomainError, NotFound
 from ..schemas import ErrorResponse
 
@@ -13,11 +15,14 @@ ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
 
 
 def register_error_handlers(app: FastAPI) -> None:
+    @app.exception_handler(psycopg.IntegrityError)
     @app.exception_handler(sqlite3.IntegrityError)
-    async def reconciliation_constraint(_request: Request, exc: sqlite3.IntegrityError) -> JSONResponse:
+    async def reconciliation_constraint(
+        _request: Request, exc: sqlite3.IntegrityError | psycopg.IntegrityError
+    ) -> JSONResponse:
         # Translate only our known reconciliation guards; unrelated SQL failures remain server errors.
-        if str(exc).startswith("Reconciliation:"):
-            return JSONResponse(status_code=409, content={"detail": str(exc)})
+        if constraint_message(exc).startswith("Reconciliation:"):
+            return JSONResponse(status_code=409, content={"detail": constraint_message(exc)})
         raise exc
 
     @app.exception_handler(DomainError)

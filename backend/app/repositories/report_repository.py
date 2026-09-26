@@ -27,7 +27,7 @@ class ReportRepository(BaseRepository):
         expenses = [
             {
                 "category": row["category"],
-                "total": Money(row["total_cents"] or 0, self.base_currency).as_float(),
+                "total": Money(int(row["total_cents"] or 0), self.base_currency).as_float(),
             }
             for row in self.conn.execute(
                 """
@@ -111,12 +111,12 @@ class ReportRepository(BaseRepository):
 
         rows = self.conn.execute(
             """
-            SELECT strftime('%Y-%m', t.date) month,
+            SELECT substr(t.date, 1, 7) AS month,
                    SUM(CASE WHEN t.type='income' THEN t.amount_cents ELSE 0 END) income_cents,
                    SUM(CASE WHEN t.type='expense' THEN t.amount_cents ELSE 0 END) expense_cents
             FROM transactions t
             JOIN accounts a ON a.id=t.account_id
-            WHERE t.deleted_at IS NULL AND strftime('%Y-%m', t.date) >= ? AND a.currency=?
+            WHERE t.deleted_at IS NULL AND substr(t.date, 1, 7) >= ? AND a.currency=?
             GROUP BY month
             ORDER BY month
             """,
@@ -125,8 +125,8 @@ class ReportRepository(BaseRepository):
         for row in rows:
             if row["month"] not in monthly:
                 continue
-            income = Money(row["income_cents"] or 0, self.base_currency)
-            expenses = Money(row["expense_cents"] or 0, self.base_currency)
+            income = Money(int(row["income_cents"] or 0), self.base_currency)
+            expenses = Money(int(row["expense_cents"] or 0), self.base_currency)
             net = income - expenses
             monthly[row["month"]].update(
                 {
@@ -143,7 +143,7 @@ class ReportRepository(BaseRepository):
             FROM transactions t
             JOIN accounts a ON a.id=t.account_id
             WHERE t.deleted_at IS NULL AND t.type='expense'
-              AND strftime('%Y-%m', t.date) >= ?
+              AND substr(t.date, 1, 7) >= ?
               AND a.currency=?
             GROUP BY t.category
             ORDER BY total_cents DESC
@@ -154,7 +154,7 @@ class ReportRepository(BaseRepository):
         top_categories = [
             {
                 "category": row["category"],
-                "total": Money(row["total_cents"] or 0, self.base_currency).as_float(),
+                "total": Money(int(row["total_cents"] or 0), self.base_currency).as_float(),
             }
             for row in category_rows
         ]
@@ -202,13 +202,13 @@ class ReportRepository(BaseRepository):
         placeholders = ",".join("?" for _ in categories)
         # Only placeholder tokens are interpolated; category values remain bound parameters.
         trend_sql = f"""
-            SELECT strftime('%Y-%m', t.date) month,
+            SELECT substr(t.date, 1, 7) AS month,
                    t.category,
                    SUM(t.amount_cents) total_cents
             FROM transactions t
             JOIN accounts a ON a.id=t.account_id
             WHERE t.deleted_at IS NULL AND t.type='expense'
-              AND strftime('%Y-%m', t.date) >= ?
+              AND substr(t.date, 1, 7) >= ?
               AND t.category IN ({placeholders})
               AND a.currency=?
             GROUP BY month, t.category
