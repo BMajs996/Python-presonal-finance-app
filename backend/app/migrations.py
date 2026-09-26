@@ -7,9 +7,10 @@ existing desktop-era database without requiring a separate migration command.
 import sqlite3
 from datetime import UTC, datetime
 
+from .migrations_reconciliation import migrate_reconciliation
 from .migrations_transaction_audit import migrate_transaction_audit
 
-LATEST_SCHEMA_VERSION = 5
+LATEST_SCHEMA_VERSION = 6
 
 MONEY_COLUMNS = (
     ("transactions", "amount", "amount_cents"),
@@ -201,6 +202,7 @@ def migrate(conn: sqlite3.Connection, base_currency: str = "USD") -> int:
         3: _migration_3_recurring_occurrences,
         4: _migration_4_money_constraints,
         5: migrate_transaction_audit,
+        6: migrate_reconciliation,
     }
     for version in range(current + 1, LATEST_SCHEMA_VERSION + 1):
         migration = migrations[version]
