@@ -3,7 +3,14 @@ from datetime import date
 from fastapi import APIRouter, Depends, Query
 
 from ..domain.errors import NotFound
-from ..schemas import TransactionCreate, TransactionPage, TransactionResponse, TransactionUpdate
+from ..schemas import (
+    DeletedTransactionPage,
+    TransactionAuditPage,
+    TransactionCreate,
+    TransactionPage,
+    TransactionResponse,
+    TransactionUpdate,
+)
 from ..services.finance_service import FinanceService
 from .dependencies import get_finance_service
 from .errors import ERROR_RESPONSES
@@ -36,6 +43,31 @@ def list_transactions(
     return {"items": rows, "total": total}
 
 
+@router.get("/deleted", response_model=DeletedTransactionPage)
+def deleted_transactions(
+    service: FinanceService = Depends(get_finance_service),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+):
+    rows, total = service.list_transactions(deleted=True, limit=limit, offset=offset)
+    return {"items": rows, "total": total}
+
+
+@router.post("/{transaction_id}/restore", response_model=TransactionResponse)
+def restore_transaction(transaction_id: int, service: FinanceService = Depends(get_finance_service)):
+    return service.restore_transaction(transaction_id)
+
+
+@router.get("/{transaction_id}/history", response_model=TransactionAuditPage)
+def transaction_history(
+    transaction_id: int,
+    service: FinanceService = Depends(get_finance_service),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+):
+    return service.transaction_history(transaction_id, limit, offset)
+
+
 @router.post("", status_code=201, response_model=TransactionResponse)
 def create_transaction(payload: TransactionCreate, service: FinanceService = Depends(get_finance_service)):
     return service.create_transaction(payload)
@@ -45,13 +77,13 @@ def create_transaction(payload: TransactionCreate, service: FinanceService = Dep
 def update_transaction(
     transaction_id: int, payload: TransactionUpdate, service: FinanceService = Depends(get_finance_service)
 ):
-    if not service.get_transaction(transaction_id):
+    updated = service.update_transaction(transaction_id, payload)
+    if updated is None:
         raise NotFound("Transaction not found")
-    return service.update_transaction(transaction_id, payload)
+    return updated
 
 
 @router.delete("/{transaction_id}", status_code=204)
 def delete_transaction(transaction_id: int, service: FinanceService = Depends(get_finance_service)):
-    if not service.get_transaction(transaction_id):
+    if not service.delete_transaction(transaction_id):
         raise NotFound("Transaction not found")
-    service.delete_transaction(transaction_id)

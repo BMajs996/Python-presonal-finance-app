@@ -241,3 +241,40 @@ class DashboardResponse(BaseModel):
     recent_transactions: list[TransactionResponse]
     budgets: list[BudgetResponse]
     accounts: list[AccountResponse]
+
+
+class DeletedTransactionResponse(TransactionResponse):
+    deleted_at: str
+
+
+class DeletedTransactionPage(BaseModel):
+    items: list[DeletedTransactionResponse]
+    total: int
+
+
+class TransactionSnapshot(BaseModel):
+    id: int
+    date: str
+    type: str
+    category: str
+    amount_cents: int
+    description: str | None
+    account_id: int | None
+    account_name: str | None
+    currency: str | None
+    deleted_at: str | None
+
+
+class TransactionAuditResponse(BaseModel):
+    id: int
+    transaction_id: int
+    action: Literal["created", "updated", "deleted", "restored"]
+    occurred_at: str
+    actor: str
+    before_state: TransactionSnapshot | None
+    after_state: TransactionSnapshot
+
+
+class TransactionAuditPage(BaseModel):
+    items: list[TransactionAuditResponse]
+    total: int

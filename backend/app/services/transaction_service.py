@@ -26,5 +26,11 @@ class TransactionService:
     def delete(self, transaction_id: int):
         return self.repository.delete(transaction_id)
 
+    def restore(self, transaction_id: int):
+        return self.repository.restore(transaction_id)
+
+    def history(self, transaction_id: int, limit: int = 100, offset: int = 0):
+        return self.repository.history(transaction_id, limit, offset)
+
     def categories(self):
         return self.repository.categories()

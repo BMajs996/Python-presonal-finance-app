@@ -1,5 +1,7 @@
-from datetime import date
+import json
+from datetime import UTC, date, datetime
 
+from ..domain.errors import NotFound
 from ..domain.money import Money
 from ..domain.transaction import Transaction
 from .base_repository import BaseRepository
@@ -16,14 +18,15 @@ class TransactionRepository(BaseRepository):
         date_end: str = "",
         limit: int = 100,
         offset: int = 0,
+        deleted: bool = False,
     ):
         query = """
             SELECT t.*, a.name AS account_name, a.currency AS account_currency
             FROM transactions t
             LEFT JOIN accounts a ON a.id=t.account_id
-            WHERE 1=1
+            WHERE (t.deleted_at IS NOT NULL) = ?
         """
-        params: list[str | int] = []
+        params: list[str | int] = [int(deleted)]
         if search:
             query += " AND (t.description LIKE ? OR t.category LIKE ? OR a.name LIKE ?)"
             params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
@@ -48,17 +51,21 @@ class TransactionRepository(BaseRepository):
         total = self.conn.execute(count_sql, params).fetchone()[0]
         query += " ORDER BY t.date DESC, t.id DESC LIMIT ? OFFSET ?"
         rows = self.conn.execute(query, [*params, limit, offset]).fetchall()
-        return [self._to_domain(row).to_dict() for row in rows], total
+        items = [self._to_domain(row).to_dict() for row in rows]
+        if deleted:
+            for item, row in zip(items, rows, strict=True):
+                item["deleted_at"] = row["deleted_at"]
+        return items, total
 
-    def get(self, transaction_id: int):
+    def get(self, transaction_id: int, include_deleted: bool = False):
         row = self.conn.execute(
             """
             SELECT t.*, a.name AS account_name, a.currency AS account_currency
             FROM transactions t
             LEFT JOIN accounts a ON a.id=t.account_id
-            WHERE t.id=?
+            WHERE t.id=? AND (? OR t.deleted_at IS NULL)
             """,
-            (transaction_id,),
+            (transaction_id, include_deleted),
         ).fetchone()
         return self._to_domain(row).to_dict() if row else None
 
@@ -100,7 +107,7 @@ class TransactionRepository(BaseRepository):
                 """
                 UPDATE transactions
                 SET date=?, type=?, category=?, amount=?, amount_cents=?, description=?, account_id=?
-                WHERE id=?
+                WHERE id=? AND deleted_at IS NULL
                 """,
                 (
                     payload.date.isoformat(),
@@ -117,12 +124,50 @@ class TransactionRepository(BaseRepository):
 
     def delete(self, transaction_id: int):
         with self.conn:
-            self.conn.execute("DELETE FROM transactions WHERE id=?", (transaction_id,))
+            cursor = self.conn.execute(
+                "UPDATE transactions SET deleted_at=? WHERE id=? AND deleted_at IS NULL",
+                (datetime.now(UTC).isoformat(), transaction_id),
+            )
+        return cursor.rowcount > 0
+
+    def restore(self, transaction_id: int):
+        with self.conn:
+            self.conn.execute("BEGIN IMMEDIATE")
+            row = self.conn.execute(
+                "SELECT account_id, deleted_at FROM transactions WHERE id=?", (transaction_id,)
+            ).fetchone()
+            if row is None:
+                raise NotFound("Transaction not found")
+            if row["deleted_at"] is not None:
+                self.resolve_account_id(row["account_id"])
+                self.conn.execute("UPDATE transactions SET deleted_at=NULL WHERE id=?", (transaction_id,))
+            result = self.get(transaction_id)
+        return result
+
+    def history(self, transaction_id: int, limit: int = 100, offset: int = 0):
+        if not self.get(transaction_id, include_deleted=True):
+            raise NotFound("Transaction not found")
+        total = self.conn.execute(
+            "SELECT COUNT(*) FROM transaction_audit WHERE transaction_id=?", (transaction_id,)
+        ).fetchone()[0]
+        rows = self.conn.execute(
+            "SELECT * FROM transaction_audit WHERE transaction_id=? ORDER BY id DESC LIMIT ? OFFSET ?",
+            (transaction_id, limit, offset),
+        ).fetchall()
+        items = []
+        for row in rows:
+            item = dict(row)
+            item["before_state"] = json.loads(item["before_state"]) if item["before_state"] else None
+            item["after_state"] = json.loads(item["after_state"])
+            items.append(item)
+        return {"items": items, "total": total}
 
     def categories(self):
         return [
             row["category"]
-            for row in self.conn.execute("SELECT DISTINCT category FROM transactions ORDER BY category")
+            for row in self.conn.execute(
+                "SELECT DISTINCT category FROM transactions WHERE deleted_at IS NULL ORDER BY category"
+            )
         ]
 
     @staticmethod

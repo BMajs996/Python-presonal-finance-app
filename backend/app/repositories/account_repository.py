@@ -16,7 +16,7 @@ class AccountRepository(BaseRepository):
                    a.opening_balance_cents
                    + COALESCE((
                        SELECT SUM(CASE WHEN t.type='income' THEN t.amount_cents ELSE -t.amount_cents END)
-                       FROM transactions t WHERE t.account_id=a.id
+                       FROM transactions t WHERE t.account_id=a.id AND t.deleted_at IS NULL
                    ), 0)
                    + COALESCE((
                        SELECT SUM(t.amount_cents) FROM transfers t WHERE t.to_account_id=a.id
@@ -24,7 +24,8 @@ class AccountRepository(BaseRepository):
                    - COALESCE((
                        SELECT SUM(t.amount_cents) FROM transfers t WHERE t.from_account_id=a.id
                    ), 0) AS balance_cents,
-                   (SELECT COUNT(*) FROM transactions t WHERE t.account_id=a.id) AS transaction_count
+                   (SELECT COUNT(*) FROM transactions t
+                    WHERE t.account_id=a.id AND t.deleted_at IS NULL) AS transaction_count
             FROM accounts a
             {where}
             ORDER BY a.active DESC, a.name

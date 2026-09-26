@@ -11,7 +11,7 @@ A web dashboard refactor of the personal finance desktop application.
 - HTML/CSS/JavaScript frontend
 - Chart.js for charts
 
-The backend keeps the existing SQLite schema compatible with the desktop application and upgrades it automatically with versioned migrations. Monetary values are persisted as exact integer cents while legacy numeric columns remain available for compatibility.
+The backend imports the original desktop SQLite schema and upgrades it automatically with versioned migrations. The archived desktop application must not be used with an upgraded database. Monetary values are persisted as exact integer cents while legacy numeric columns remain available for compatibility.
 
 ## Run locally
 
@@ -75,7 +75,10 @@ Useful endpoints:
 - `GET /api/transactions`
 - `POST /api/transactions`
 - `PUT /api/transactions/{id}`
-- `DELETE /api/transactions/{id}`
+- `DELETE /api/transactions/{id}` (soft delete)
+- `GET /api/transactions/deleted?limit=50&offset=0`
+- `POST /api/transactions/{id}/restore`
+- `GET /api/transactions/{id}/history?limit=50&offset=0`
 - `GET /api/recurring`
 - `POST /api/recurring`
 - `PUT /api/recurring/{id}`
@@ -209,6 +212,30 @@ rows. Review and repair the identified data or restore a verified backup before 
 Legacy-only writers, including the archived desktop application, cannot write new monetary rows to
 an upgraded database without supplying valid matching cent columns.
 
+## Transaction history and recovery
+
+Migration 5 adds a soft-delete timestamp and an append-only transaction history. Transaction creation,
+edits, deletion, and restoration record before/after snapshots in the same database transaction as the
+financial write. Snapshots retain exact integer cents, account information, and UTC event timestamps.
+This includes transactions created by CSV imports and recurring processing.
+
+Each transaction has a History action. Deletion offers an immediate Undo action; the Deleted button
+opens retained transactions for recovery after a reload or restart. Restoring preserves the original
+transaction ID and amount. Repeated restores do not duplicate entries or audit events. Restoration
+requires an active account. Deleted entries cannot be edited and are excluded from active lists,
+CSV exports, account balances/counts, budgets, dashboard metrics, and monthly reports.
+
+History starts when the migration is applied; older changes cannot be reconstructed. Existing active
+entries and balances are preserved. No-op updates do not create events. The actor is currently
+`local`, not an authenticated user identity. SQLite triggers reject audit updates/deletions and
+transaction hard deletes, but this is not tamper-proof storage against a database administrator.
+There is no automatic purge: deleted financial data and its history remain in the database and backups.
+
+This milestone covers income/expense transactions only. Transfer deletion and other entities retain
+their existing behavior; reverting edits and statement reconciliation are not included.
+Create a verified backup before upgrading. Do not run the archived desktop client against schema 5,
+because its reads do not understand soft deletion.
+
 ## API contracts
 
 All JSON success responses have explicit Pydantic response models, including nested dashboard and monthly
@@ -292,7 +319,8 @@ npm run test:e2e
 
 Unit tests cover CSV quoting, output escaping, currency formatting, API errors, and calendar dates in
 multiple timezones. Browser tests exercise transaction creation/editing/deletion, CSV preview and export,
-transfer neutrality, chart rendering, and failed submissions on desktop and emulated mobile Chromium.
+transfer neutrality, chart rendering, failed submissions, filter races, transaction history, Undo, and
+persistent recovery on desktop and emulated mobile Chromium.
 
 Each browser test launches its own real FastAPI server on an ephemeral loopback port with a temporary
 database. It does not use your running application or personal finance database. External browser requests

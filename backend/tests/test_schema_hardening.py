@@ -7,6 +7,8 @@ from app.migrations import LATEST_SCHEMA_VERSION, MONEY_COLUMNS, migrate
 from app.repositories.finance_repository import FinanceRepository
 from app.schemas import AccountCreate, BudgetCreate, RecurringCreate, TransactionCreate, TransferCreate
 
+from .schema_helpers import remove_transaction_audit
+
 
 @pytest.fixture
 def populated(db):
@@ -34,6 +36,7 @@ def populated(db):
 
 def remove_version_four(conn):
     with conn:
+        remove_transaction_audit(conn)
         for table, _, _ in MONEY_COLUMNS:
             for operation in ("insert", "update"):
                 conn.execute(f"DROP TRIGGER money_{table}_{operation}")
@@ -98,16 +101,33 @@ def test_version_three_upgrade_preserves_rows_relationships_and_indexes(populate
     remove_version_four(conn)
     tables = [table for table, _, _ in MONEY_COLUMNS] + ["recurring_occurrences"]
     before = {
-        table: [tuple(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY rowid")]
+        table: [
+            {k: row[k] for k in row.keys() if k != "deleted_at"}
+            for row in conn.execute(f"SELECT * FROM {table} ORDER BY rowid")
+        ]
         for table in tables
     }
-    indexes = list(conn.execute("SELECT name, sql FROM sqlite_master WHERE type='index' ORDER BY name"))
+    indexes = list(
+        conn.execute(
+            """SELECT name, sql FROM sqlite_master WHERE type='index'
+                AND name NOT IN ('idx_transaction_audit_history', 'idx_transactions_deleted') ORDER BY name"""
+        )
+    )
     assert migrate(conn) == LATEST_SCHEMA_VERSION
     assert migrate(conn) == LATEST_SCHEMA_VERSION
     for table in tables:
-        assert [tuple(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY rowid")] == before[table]
+        assert [
+            {k: row[k] for k in row.keys() if k != "deleted_at"}
+            for row in conn.execute(f"SELECT * FROM {table} ORDER BY rowid")
+        ] == before[table]
     assert (
-        list(conn.execute("SELECT name, sql FROM sqlite_master WHERE type='index' ORDER BY name")) == indexes
+        list(
+            conn.execute(
+                """SELECT name, sql FROM sqlite_master WHERE type='index'
+                AND name NOT IN ('idx_transaction_audit_history', 'idx_transactions_deleted') ORDER BY name"""
+            )
+        )
+        == indexes
     )
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     with populated.database.connection() as another:

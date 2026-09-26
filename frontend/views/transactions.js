@@ -3,6 +3,7 @@ import {
   deleteTransaction,
   listTransactions,
   updateTransaction,
+  restoreTransaction,
 } from "../api/transactions.js";
 import { bindModalClose, closeModal, openModal } from "../components/modal.js";
 import { reportError, toast } from "../components/toast.js";
@@ -12,8 +13,10 @@ import { $ } from "../utils/dom.js";
 import { escapeAttr, escapeHtml } from "../utils/escape.js";
 import { getBaseCurrency, money } from "../utils/money.js";
 import { getAccounts, loadReferenceData } from "./reference-data.js";
+import { initTransactionHistory, showTransactionHistory } from "./transaction-history.js";
 
 let transactionsCache = [];
+let transactionRequestId = 0;
 let csvPreviewRows = [];
 
 function filterParams() {
@@ -29,7 +32,15 @@ function filterParams() {
 }
 
 export async function loadTransactions() {
-  const data = await listTransactions(filterParams());
+  const requestId = ++transactionRequestId;
+  let data;
+  try {
+    data = await listTransactions(filterParams());
+  } catch (error) {
+    if (requestId !== transactionRequestId) return;
+    throw error;
+  }
+  if (requestId !== transactionRequestId) return;
   transactionsCache = data.items;
   $("transaction-count").textContent = `${data.total} record${data.total === 1 ? "" : "s"}`;
   $("transaction-table").innerHTML = data.items.map((transaction) => `<tr>
@@ -41,6 +52,7 @@ export async function loadTransactions() {
     <td class="amount ${transaction.type}">${transaction.type === "income" ? "+" : "-"}${money(transaction.amount, transaction.currency)}</td>
     <td><div class="row-actions">
       <button class="ghost" data-action="edit-transaction" data-id="${transaction.id}">Edit</button>
+      <button class="ghost" data-action="transaction-history" data-id="${transaction.id}">History</button>
       <button class="ghost" data-action="delete-transaction" data-id="${transaction.id}">Delete</button>
     </div></td>
   </tr>`).join("");
@@ -214,14 +226,21 @@ async function confirmCsvImport(refresh) {
 }
 
 export function initTransactionsView({ refresh }) {
+  initTransactionHistory({ refresh });
   [$("add-transaction-btn"), $("add-transaction-btn-2")].forEach((button) =>
     button.addEventListener("click", () => openTransactionModal().catch(reportError)));
   bindModalClose("close-modal", "modal");
   $("filter-btn").addEventListener("click", () => loadTransactions().catch(reportError));
+  ["type-filter", "category-filter", "account-filter"].forEach((id) =>
+    $(id).addEventListener("change", () => loadTransactions().catch(reportError)));
   $("transaction-table").addEventListener("click", async (event) => {
     const button = event.target.closest("[data-action]");
     if (!button) return;
     const id = Number(button.dataset.id);
+    if (button.dataset.action === "transaction-history") {
+      showTransactionHistory(id).catch(reportError);
+      return;
+    }
     if (button.dataset.action === "edit-transaction") {
       const transaction = transactionsCache.find((item) => item.id === id);
       if (transaction) openTransactionModal(transaction).catch(reportError);
@@ -230,8 +249,15 @@ export function initTransactionsView({ refresh }) {
     if (button.dataset.action !== "delete-transaction" || !confirm("Delete this transaction?")) return;
     try {
       await deleteTransaction(id);
-      toast("Transaction deleted");
       await refresh();
+      toast("Transaction deleted", {
+        label: "Undo",
+        run: async () => {
+          await restoreTransaction(id);
+          await refresh();
+          toast("Transaction restored");
+        },
+      });
     } catch (error) {
       reportError(error);
     }
