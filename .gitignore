@@ -12,6 +12,7 @@ data/*.db-shm
 data/*.db-wal
 data/backups/
 *.financebackup
+*.pgdump
 *.sqlite
 *.sqlite3
 

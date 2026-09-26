@@ -9,14 +9,14 @@ from fastapi.staticfiles import StaticFiles
 from .api import accounts, budgets, dashboard, reconciliation, recurring, reports, transactions, transfers
 from .api.errors import register_error_handlers
 from .core.config import settings
-from .database import FinanceDatabase
+from .database_factory import open_database
 from .schemas import HealthResponse
 from .services.recurring_runner import run_recurring
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    database = FinanceDatabase(settings.database_path, settings.base_currency)
+    database = open_database(settings)
     database.close()
     app.state.database = database
     stop = asyncio.Event()

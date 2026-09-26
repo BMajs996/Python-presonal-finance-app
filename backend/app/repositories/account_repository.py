@@ -52,7 +52,7 @@ class AccountRepository(BaseRepository):
                 INSERT INTO accounts(
                     name, type, currency, opening_balance, opening_balance_cents, active, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, 1, ?)
+                VALUES (?, ?, ?, ?, ?, 1, ?) RETURNING id
                 """,
                 (
                     name,
@@ -63,7 +63,8 @@ class AccountRepository(BaseRepository):
                     datetime.now(UTC).isoformat(),
                 ),
             )
-        return self.get(self.inserted_id(cursor))
+            account_id = self.inserted_id(cursor)
+        return self.get(account_id)
 
     def deactivate(self, account_id: int):
         if account_id == self.default_account_id():
@@ -79,7 +80,7 @@ class AccountRepository(BaseRepository):
             type=row["type"],
             currency=row["currency"],
             opening_balance=Money(row["opening_balance_cents"], row["currency"]),
-            balance=Money(row["balance_cents"], row["currency"]),
+            balance=Money(int(row["balance_cents"]), row["currency"]),
             active=bool(row["active"]),
             created_at=row["created_at"],
             transaction_count=row["transaction_count"],

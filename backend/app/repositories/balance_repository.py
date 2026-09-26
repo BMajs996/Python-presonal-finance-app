@@ -69,7 +69,7 @@ class BalanceRepository(BaseRepository):
                                        THEN t.amount_cents ELSE -t.amount_cents END)
                        FROM transactions t
                        JOIN accounts a ON a.id=t.account_id
-                       WHERE t.deleted_at IS NULL AND strftime('%Y-%m', t.date) < ? AND a.currency=?
+                       WHERE t.deleted_at IS NULL AND substr(t.date, 1, 7) < ? AND a.currency=?
                    ), 0) AS balance_cents
             """,
             (self.base_currency, start_month, self.base_currency),
@@ -78,12 +78,12 @@ class BalanceRepository(BaseRepository):
             row["month"]: int(row["change_cents"] or 0)
             for row in self.conn.execute(
                 """
-                SELECT strftime('%Y-%m', t.date) month,
+                SELECT substr(t.date, 1, 7) AS month,
                        SUM(CASE WHEN t.type='income'
                                 THEN t.amount_cents ELSE -t.amount_cents END) change_cents
                 FROM transactions t
                 JOIN accounts a ON a.id=t.account_id
-                WHERE t.deleted_at IS NULL AND strftime('%Y-%m', t.date) >= ? AND a.currency=?
+                WHERE t.deleted_at IS NULL AND substr(t.date, 1, 7) >= ? AND a.currency=?
                 GROUP BY month
                 """,
                 (start_month, self.base_currency),

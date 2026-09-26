@@ -2,12 +2,13 @@ import asyncio
 import logging
 
 from ..database import FinanceDatabase
+from ..postgres_database import PostgresDatabase
 from ..repositories.recurring_repository import RecurringRepository
 
 logger = logging.getLogger(__name__)
 
 
-def process_recurring(database: FinanceDatabase) -> int:
+def process_recurring(database: FinanceDatabase | PostgresDatabase) -> int:
     with database.connection() as connection:
         return RecurringRepository(connection, database.base_currency).process_due()
 

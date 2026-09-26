@@ -151,4 +151,4 @@ def test_migration_is_idempotent_and_insert_id_requires_a_value(db):
     assert migrate(db.database.conn, db.base_currency) == LATEST_SCHEMA_VERSION
 
     with pytest.raises(RuntimeError, match="did not return an id"):
-        BaseRepository.inserted_id(SimpleNamespace(lastrowid=None))
+        BaseRepository.inserted_id(SimpleNamespace(fetchone=lambda: None))

@@ -7,7 +7,7 @@ A web dashboard refactor of the personal finance desktop application.
 ## Stack
 
 - FastAPI backend
-- SQLite database
+- PostgreSQL 18 or SQLite database
 - HTML/CSS/JavaScript frontend
 - Chart.js for charts
 
@@ -43,7 +43,7 @@ finance-dashboard/
 │   │   ├── api/              # HTTP routes
 │   │   ├── core/             # configuration
 │   │   ├── domain/           # framework-free business rules
-│   │   ├── repositories/     # feature-owned SQLite queries
+│   │   ├── repositories/     # feature-owned database queries
 │   │   ├── services/         # feature-owned application logic
 │   │   ├── database.py       # connection and schema lifecycle
 │   │   ├── migrations.py     # versioned schema migrations
@@ -119,7 +119,7 @@ The backend is separated into focused layers:
 
 - `api/` — HTTP routes and request/response concerns
 - `services/` — application logic grouped by feature
-- `repositories/` — SQLite persistence grouped by feature
+- `repositories/` — database persistence grouped by feature
 - `domain/` — framework-free rules such as recurrence date calculations
 - `database.py` — SQLite connection, schema initialization, and migration lifecycle
 - `core/config.py` — environment-driven configuration
@@ -278,7 +278,7 @@ Endpoints:
 - `POST /api/reconciliations/{id}/complete`
 - `DELETE /api/reconciliations/{id}` (drafts only)
 
-Create a verified backup before starting the upgraded application. PostgreSQL migration remains deferred.
+Create a verified backup before starting the upgraded application. PostgreSQL migration is available using the procedure below.
 
 ## API contracts
 
@@ -378,3 +378,97 @@ and uploads browser diagnostics on failure. All test records are synthetic.
 Chart.js 4.5.1 and its license are vendored under frontend/vendor/, so ordinary application startup does
 not require Node.js or CDN access. Regenerate those files with `npm run vendor:charts` after an intentional
 dependency update and commit them with package-lock.json.
+
+
+## PostgreSQL
+
+SQLite remains the default when `DATABASE_URL` is unset. Setting the URL selects PostgreSQL
+for API requests and recurring processing; it takes precedence over `DATABASE_PATH`.
+The app remains single-currency. Keep `BASE_CURRENCY` unchanged when moving existing data.
+
+Install PostgreSQL 18 and its client tools using your operating system's package manager.
+On a Linux installation with peer authentication, create a role matching your login and two databases.
+For the local login `taraba`, run each complete command:
+
+```bash
+sudo --user=postgres createuser taraba
+sudo --user=postgres createdb --owner=taraba finance_dashboard
+sudo --user=postgres createdb --owner=taraba finance_dashboard_test
+```
+
+The application role does not need superuser or database-creation privileges.
+Enter administrator passwords only in the terminal, never in configuration or source control.
+A local Unix socket URL needs no database password.
+
+### Move existing SQLite data
+
+Stop all application servers and recurring schedulers before starting. Install the updated dependencies.
+The destination must be empty: do not launch the app against PostgreSQL before importing.
+
+```bash
+source .venv/bin/activate
+pip install -r backend/requirements.txt
+export DATABASE_URL=postgresql:///finance_dashboard
+
+# Dry run: copy and compare every column, then roll back the destination.
+python -m backend.app.maintenance migrate-postgres --database data/personal_finance.db
+
+# Creates a verified pre-postgres backup, verifies the copy, and commits atomically.
+python -m backend.app.maintenance migrate-postgres --database data/personal_finance.db --yes
+```
+
+The transfer preserves IDs, exact cents, deleted transactions, audit history, recurring occurrence
+records, and completed reconciliations. It blocks SQLite writers during the transfer and leaves
+the original database untouched. A failed transfer rolls back the destination; an occupied
+destination is refused. Older supported SQLite schemas are upgraded only in a temporary snapshot.
+
+After success, put `DATABASE_URL=postgresql:///finance_dashboard` in the gitignored `.env`,
+then run `python run.py`. Do not restart old SQLite writers. Before any new PostgreSQL writes,
+you can roll back by stopping the app and clearing `DATABASE_URL`. After new writes,
+switching back would lose those changes; reconcile/export them first.
+
+PostgreSQL schema versions are tracked separately in `postgres_schema_migrations`.
+Version 1 implements SQLite schema 6 semantics. The historical SQLite migration ledger is preserved.
+PostgreSQL uses BIGINT cents, foreign keys, money constraints, and audit/reconciliation triggers.
+An advisory transaction lock currently serializes writers to preserve existing financial invariants.
+This is deliberately conservative, not a claim of high write scalability.
+
+### PostgreSQL backup and recovery
+
+The SQLite `backup`, `restore`, and `integrity` commands do not operate on PostgreSQL.
+With `DATABASE_URL` set, they require an explicit SQLite `--database` path.
+Use PostgreSQL's native tools for the active database:
+
+```bash
+mkdir -p data/backups
+chmod 700 data/backups
+pg_dump --dbname=finance_dashboard --format=custom --no-owner --no-privileges \
+  --file="data/backups/finance-$(date +%Y%m%d-%H%M%S).pgdump"
+```
+
+Recovery drill: ask the administrator to create a separate empty database owned by your login,
+then restore a trusted dump there, never over the live database:
+
+```bash
+sudo --user=postgres createdb --owner=taraba finance_dashboard_restore
+pg_restore --dbname=finance_dashboard_restore --single-transaction --exit-on-error \
+  --no-owner --no-privileges data/backups/<archive>.pgdump
+```
+
+Compare account balances, reports, history, and reconciliation records before any cutover.
+Stop the app before changing its URL to a restored database. Dumps contain unencrypted financial
+data and database code; protect them, never commit them, and restore only trusted archives.
+See the [PostgreSQL pg_dump documentation](https://www.postgresql.org/docs/18/app-pgdump.html).
+
+### Test both backends
+
+```bash
+TEST_DATABASE_URL=postgresql:///finance_dashboard_test pytest --cov=backend/app --cov-branch
+npm run test:e2e
+E2E_DATABASE_URL=postgresql:///finance_dashboard_test npm run test:e2e
+```
+
+PostgreSQL tests require a database name ending in `_test`; each uses its own temporary schema.
+They never truncate the database or use the live application URL. Without `TEST_DATABASE_URL`,
+PostgreSQL backend tests are skipped. Browser tests default to temporary SQLite databases.
+CI supplies PostgreSQL 18 and exercises both backends.

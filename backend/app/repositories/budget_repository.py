@@ -15,7 +15,7 @@ class BudgetRepository(BaseRepository):
             LEFT JOIN transactions t
               ON t.category=b.category AND t.deleted_at IS NULL
              AND t.type='expense'
-             AND strftime('%Y-%m', t.date)=?
+             AND substr(t.date, 1, 7)=?
             WHERE b.month_year=?
             GROUP BY b.id, b.category, b.monthly_limit_cents, b.month_year
             ORDER BY b.category
@@ -25,7 +25,7 @@ class BudgetRepository(BaseRepository):
         result = []
         for row in rows:
             limit = Money(row["monthly_limit_cents"], self.base_currency)
-            spent = Money(row["spent_cents"] or 0, self.base_currency)
+            spent = Money(int(row["spent_cents"] or 0), self.base_currency)
             result.append(
                 {
                     "id": row["id"],

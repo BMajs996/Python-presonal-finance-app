@@ -1,5 +1,4 @@
-import sqlite3
-
+from ..database_errors import INTEGRITY_ERRORS, is_unique_violation
 from ..domain.errors import Conflict
 
 
@@ -16,8 +15,8 @@ class AccountService:
     def create(self, payload):
         try:
             return self.repository.add(payload)
-        except sqlite3.IntegrityError as exc:
-            if exc.sqlite_errorcode == sqlite3.SQLITE_CONSTRAINT_UNIQUE:
+        except INTEGRITY_ERRORS as exc:
+            if is_unique_violation(exc):
                 raise Conflict("An account with this name already exists") from exc
             raise
 

@@ -22,3 +22,10 @@ def finance_service(db):
     from app.services.finance_service import FinanceService
 
     return FinanceService(db)
+
+
+@pytest.fixture(autouse=True)
+def isolate_database_url(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "database_url", None)

@@ -24,9 +24,9 @@ class TransactionRepository(BaseRepository):
             SELECT t.*, a.name AS account_name, a.currency AS account_currency
             FROM transactions t
             LEFT JOIN accounts a ON a.id=t.account_id
-            WHERE (t.deleted_at IS NOT NULL) = ?
+            WHERE (t.deleted_at IS NOT NULL) = CAST(? AS BOOLEAN)
         """
-        params: list[str | int] = [int(deleted)]
+        params: list[str | int] = [deleted]
         if search:
             query += " AND (t.description LIKE ? OR t.category LIKE ? OR a.name LIKE ?)"
             params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
@@ -78,7 +78,7 @@ class TransactionRepository(BaseRepository):
                 INSERT INTO transactions(
                     date, type, category, amount, amount_cents, description, account_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id
                 """,
                 (
                     payload.date.isoformat(),
@@ -90,7 +90,8 @@ class TransactionRepository(BaseRepository):
                     account_id,
                 ),
             )
-        return self.get(self.inserted_id(cursor))
+            transaction_id = self.inserted_id(cursor)
+        return self.get(transaction_id)
 
     def update(self, transaction_id: int, payload):
         existing = self.get(transaction_id)

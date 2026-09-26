@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from ..domain.errors import NotFound
 from .account_repository import AccountRepository
 from .base_repository import BaseRepository
@@ -47,7 +49,7 @@ class ReconciliationRepository(BaseRepository):
     def create(self, account_id: int, closing_date: str, opening: int, closing: int):
         cursor = self.conn.execute(
             """INSERT INTO reconciliations(account_id, closing_date, opening_balance_cents,
-            closing_balance_cents) VALUES (?, ?, ?, ?)""",
+            closing_balance_cents) VALUES (?, ?, ?, ?) RETURNING id""",
             (account_id, closing_date, opening, closing),
         )
         return self.inserted_id(cursor)
@@ -65,15 +67,15 @@ class ReconciliationRepository(BaseRepository):
         else:
             self.conn.execute(
                 """DELETE FROM reconciliation_entries WHERE reconciliation_id=?
-                AND transaction_id IS ? AND transfer_id IS ?""",
+                AND transaction_id IS NOT DISTINCT FROM ? AND transfer_id IS NOT DISTINCT FROM ?""",
                 (statement["id"], transaction_id, transfer_id),
             )
 
     def complete(self, ident: int):
         self.conn.execute(
             """UPDATE reconciliations SET status='completed',
-            completed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?""",
-            (ident,),
+            completed_at=? WHERE id=?""",
+            (datetime.now(UTC).isoformat(), ident),
         )
 
     def cancel(self, ident: int):

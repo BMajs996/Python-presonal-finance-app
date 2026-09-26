@@ -41,7 +41,7 @@ class RecurringRepository(BaseRepository):
                 INSERT INTO recurring_transactions
                     (type, category, amount, amount_cents, description, frequency,
                      next_date, active, account_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?) RETURNING id
                 """,
                 (
                     payload.type,
@@ -54,7 +54,8 @@ class RecurringRepository(BaseRepository):
                     account_id,
                 ),
             )
-        return self.get(self.inserted_id(cursor))
+            recurring_id = self.inserted_id(cursor)
+        return self.get(recurring_id)
 
     def update(self, recurring_id: int, payload):
         if not self.conn.execute(
