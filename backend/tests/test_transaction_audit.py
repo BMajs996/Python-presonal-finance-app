@@ -205,4 +205,4 @@ def test_audit_migration_failure_rolls_back_ddl_and_version(db):
     assert db.conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 4
     assert "deleted_at" not in [row["name"] for row in db.conn.execute("PRAGMA table_info(transactions)")]
     assert not db.conn.execute("SELECT name FROM sqlite_master WHERE name='transaction_audit'").fetchall()
-    assert migrate(db.conn) == 5
+    assert migrate(db.conn) == 6

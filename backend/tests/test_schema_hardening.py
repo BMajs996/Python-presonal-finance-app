@@ -110,6 +110,7 @@ def test_version_three_upgrade_preserves_rows_relationships_and_indexes(populate
     indexes = list(
         conn.execute(
             """SELECT name, sql FROM sqlite_master WHERE type='index'
+                AND tbl_name NOT IN ('reconciliations', 'reconciliation_entries')
                 AND name NOT IN ('idx_transaction_audit_history', 'idx_transactions_deleted') ORDER BY name"""
         )
     )
@@ -124,6 +125,7 @@ def test_version_three_upgrade_preserves_rows_relationships_and_indexes(populate
         list(
             conn.execute(
                 """SELECT name, sql FROM sqlite_master WHERE type='index'
+                AND tbl_name NOT IN ('reconciliations', 'reconciliation_entries')
                 AND name NOT IN ('idx_transaction_audit_history', 'idx_transactions_deleted') ORDER BY name"""
             )
         )

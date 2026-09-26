@@ -232,9 +232,53 @@ transaction hard deletes, but this is not tamper-proof storage against a databas
 There is no automatic purge: deleted financial data and its history remain in the database and backups.
 
 This milestone covers income/expense transactions only. Transfer deletion and other entities retain
-their existing behavior; reverting edits and statement reconciliation are not included.
+their existing behavior; reverting edits is not included. Statement reconciliation is described below.
 Create a verified backup before upgrading. Do not run the archived desktop client against schema 5,
 because its reads do not understand soft deletion.
+
+## Statement reconciliation
+
+Migration 6 adds saved account statements and cleared-entry associations. The Reconciliation view
+accepts an account, statement closing date, and closing balance. Only one draft can exist per account;
+its selections persist across reloads. Discarding a draft removes its selections without changing money.
+To correct a draft's date or statement balance, discard it and start again.
+
+The first statement starts with the account's configured opening balance; later statements start
+with the previous completed statement's closing balance. The remaining difference is:
+
+```text
+statement closing balance - (opening balance + selected income - selected expenses
+                            + selected incoming transfers - selected outgoing transfers)
+```
+
+All calculations and completion checks use integer cents. Select entries that cleared on the statement.
+Only active transactions and transfers dated on or before its closing date are eligible. Previously
+reconciled entries are excluded; older outstanding entries remain available on later statements.
+Transfer sides clear independently for the sending and receiving accounts. Reconciliation never
+inserts balance adjustments or changes account totals.
+
+Completion requires an exact zero difference and locks the statement permanently. Dates must not be
+in the future and must follow the account's previous completed statement. Completed statements remain
+viewable, including for inactive accounts. A selected entry is protected against editing/deletion;
+uncheck it in its draft before changing it. Once included in a completed statement, it cannot be
+edited or deleted. The account opening balance and currency are also protected after reconciliation
+begins. There is no reopen operation in this version; review all selections before completing.
+
+Writes serialize validation and completion with SQLite transactions. Database guards protect selected
+transactions/transfers and completed records, including against direct SQL changes through ordinary
+connections. Migration preserves existing entries and balances, and backups include reconciliation
+history and its locks. These guards are not tamper-proof against a database administrator.
+
+Endpoints:
+- `GET /api/reconciliations/accounts` (including inactive accounts)
+- `GET /api/reconciliations?account_id={id}`
+- `POST /api/reconciliations`
+- `GET /api/reconciliations/{id}`
+- `PUT /api/reconciliations/{id}/entries` (kind, entry_id, cleared)
+- `POST /api/reconciliations/{id}/complete`
+- `DELETE /api/reconciliations/{id}` (drafts only)
+
+Create a verified backup before starting the upgraded application. PostgreSQL migration remains deferred.
 
 ## API contracts
 
@@ -320,7 +364,7 @@ npm run test:e2e
 Unit tests cover CSV quoting, output escaping, currency formatting, API errors, and calendar dates in
 multiple timezones. Browser tests exercise transaction creation/editing/deletion, CSV preview and export,
 transfer neutrality, chart rendering, failed submissions, filter races, transaction history, Undo, and
-persistent recovery on desktop and emulated mobile Chromium.
+persistent recovery, and saved statement reconciliation on desktop and emulated mobile Chromium.
 
 Each browser test launches its own real FastAPI server on an ephemeral loopback port with a temporary
 database. It does not use your running application or personal finance database. External browser requests

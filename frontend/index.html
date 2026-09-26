@@ -24,6 +24,7 @@
       <button class="nav-item" data-view="budgets">Budgets</button>
       <button class="nav-item" data-view="reports">Reports</button>
       <button class="nav-item" data-view="accounts">Accounts</button>
+      <button class="nav-item" data-view="reconciliation">Reconciliation</button>
       <button class="nav-item" data-view="transfers">Transfers</button>
     </nav>
 
@@ -312,6 +313,46 @@
         </div>
         <canvas id="net-worth-chart"></canvas>
       </section>
+    </section>
+    <section id="reconciliation-view" class="view hidden">
+      <div class="panel-head">
+        <h2>Statement reconciliation</h2>
+        <label>Account <select id="reconciliation-account"></select></label>
+      </div>
+      <div id="reconciliation-body">
+        <form id="reconciliation-create" class="statement-setup">
+          <label>Closing date<input id="reconciliation-date" type="date" required></label>
+          <label>Statement balance<input id="reconciliation-balance" type="number" step="0.01" required></label>
+          <button class="primary" type="submit">Start reconciliation</button>
+        </form>
+        <section id="reconciliation-detail" class="statement-detail hidden">
+          <div class="panel-head">
+            <div><h2 id="reconciliation-heading"></h2><p id="reconciliation-status"></p></div>
+            <div class="actions">
+              <button id="reconciliation-cancel" class="ghost">Discard draft</button>
+              <button id="reconciliation-complete" class="primary">Complete statement</button>
+            </div>
+          </div>
+          <dl class="statement-totals">
+            <div><dt>Opening balance</dt><dd id="reconciliation-opening"></dd></div>
+            <div><dt>Statement balance</dt><dd id="reconciliation-closing"></dd></div>
+            <div><dt>Cleared balance</dt><dd id="reconciliation-cleared"></dd></div>
+            <div><dt>Difference</dt><dd id="reconciliation-difference" aria-live="polite"></dd></div>
+          </dl>
+          <p id="reconciliation-entry-count"></p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Cleared</th><th>Date</th><th>Entry</th><th>Amount</th></tr></thead>
+            <tbody id="reconciliation-entries"></tbody>
+          </table></div>
+        </section>
+        <section class="statement-history">
+          <h2>Statements</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Closing date</th><th>Status</th><th>Balance</th><th></th></tr></thead>
+            <tbody id="reconciliation-history"></tbody>
+          </table></div>
+        </section>
+      </div>
     </section>
   </main>
 

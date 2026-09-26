@@ -434,3 +434,50 @@ def test_transaction_recovery_and_history_api(client):
     for path in ("/api/transactions/deleted", url + "/history"):
         assert client.get(path + "?limit=0").status_code == 422
         assert client.get(path + "?offset=-1").status_code == 422
+
+
+def test_reconciliation_api_and_entry_locks(client):
+    from datetime import date
+
+    transaction = client.post(
+        "/api/transactions",
+        json={
+            "date": date.today().isoformat(),
+            "type": "income",
+            "category": "Salary",
+            "amount": "12.34",
+        },
+    ).json()
+    payload = {
+        "account_id": transaction["account_id"],
+        "closing_date": date.today().isoformat(),
+        "closing_balance": "12.34",
+    }
+    response = client.post("/api/reconciliations", json=payload)
+    assert response.status_code == 201
+    statement = response.json()
+    url = f"/api/reconciliations/{statement['id']}"
+    assert client.post(url + "/complete").status_code == 409
+    selected = client.put(
+        url + "/entries",
+        json={
+            "kind": "transaction",
+            "entry_id": transaction["id"],
+            "cleared": True,
+        },
+    )
+    assert selected.status_code == 200
+    assert selected.json()["difference_cents"] == 0
+    assert client.delete(f"/api/transactions/{transaction['id']}").status_code == 409
+    completed = client.post(url + "/complete")
+    assert completed.status_code == 200
+    assert client.get(url).json() == completed.json()
+    assert client.delete(url).status_code == 409
+    assert client.get("/api/reconciliations?account_id=1").json()[0]["status"] == "completed"
+    assert client.get("/api/reconciliations/9999").status_code == 404
+    assert (
+        client.post("/api/reconciliations", json={**payload, "closing_date": "2026-02-30"}).status_code == 422
+    )
+    assert (
+        client.post("/api/reconciliations", json={**payload, "closing_balance": "0.001"}).status_code == 422
+    )

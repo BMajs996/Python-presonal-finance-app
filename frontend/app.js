@@ -9,7 +9,10 @@ import { initReportsView, loadReports } from "./views/reports.js";
 import { initTransactionsView, loadTransactions } from "./views/transactions.js";
 import { initTransfersView, loadTransfers } from "./views/transfers.js";
 
+import { initReconciliationView, loadReconciliation } from "./views/reconciliation.js";
+
 const viewTitles = {
+  reconciliation: "Reconciliation",
   dashboard: "Dashboard",
   transactions: "Transactions",
   recurring: "Recurring",
@@ -20,6 +23,7 @@ const viewTitles = {
 };
 
 const viewLoaders = {
+  reconciliation: loadReconciliation,
   dashboard: loadDashboard,
   transactions: loadTransactions,
   recurring: loadRecurring,
@@ -51,6 +55,7 @@ function initNavigation() {
     button.addEventListener("click", () => showView(button.dataset.viewTarget).catch(reportError)));
 }
 
+initReconciliationView();
 initNavigation();
 initDashboardView();
 initTransactionsView({ refresh });
