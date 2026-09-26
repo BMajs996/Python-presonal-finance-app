@@ -11,3 +11,12 @@ export const updateTransaction = (id, payload) =>
 
 export const deleteTransaction = (id) =>
   request(`/api/transactions/${id}`, { method: "DELETE" });
+
+export const restoreTransaction = (id) =>
+  request(`/api/transactions/${id}/restore`, { method: "POST" });
+
+export const listDeletedTransactions = (offset = 0) =>
+  request(`/api/transactions/deleted?limit=50&offset=${offset}`);
+
+export const transactionHistory = (id, offset = 0) =>
+  request(`/api/transactions/${id}/history?limit=50&offset=${offset}`);

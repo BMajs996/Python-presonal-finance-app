@@ -37,6 +37,12 @@ class FinanceService:
     def delete_transaction(self, transaction_id: int):
         return self.transactions_service.delete(transaction_id)
 
+    def restore_transaction(self, transaction_id: int):
+        return self.transactions_service.restore(transaction_id)
+
+    def transaction_history(self, transaction_id: int, limit: int = 100, offset: int = 0):
+        return self.transactions_service.history(transaction_id, limit, offset)
+
     def categories(self):
         return self.transactions_service.categories()
 

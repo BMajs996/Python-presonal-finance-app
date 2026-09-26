@@ -13,7 +13,7 @@ class BudgetRepository(BaseRepository):
                    COALESCE(SUM(t.amount_cents),0) spent_cents
             FROM budgets b
             LEFT JOIN transactions t
-              ON t.category=b.category
+              ON t.category=b.category AND t.deleted_at IS NULL
              AND t.type='expense'
              AND strftime('%Y-%m', t.date)=?
             WHERE b.month_year=?

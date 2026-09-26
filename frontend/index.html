@@ -150,6 +150,7 @@
           </div>
           <div class="actions">
             <input id="csv-import-file" class="hidden" type="file" accept=".csv,text/csv">
+            <button class="ghost" id="deleted-transactions-btn">Deleted</button>
             <button class="ghost" id="import-csv-btn">Import CSV</button>
             <button class="ghost" id="export-csv-btn">Export CSV</button>
             <button class="primary" id="add-transaction-btn-2">+ Add</button>
@@ -410,9 +411,38 @@
     </div>
   </div>
 
+
+  <div id="deleted-transactions-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="deleted-title">
+    <div class="modal-card wide-modal">
+      <div class="modal-head"><h2 id="deleted-title">Deleted transactions</h2>
+        <button class="close" id="close-deleted-transactions" aria-label="Close deleted transactions">×</button></div>
+      <p id="deleted-count"></p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Date</th><th>Transaction</th><th>Amount</th><th>Actions</th></tr></thead>
+        <tbody id="deleted-table"></tbody>
+      </table></div>
+      <div class="modal-actions">
+        <button class="ghost" id="deleted-previous" aria-label="Previous deleted transactions">←</button>
+        <button class="ghost" id="deleted-next" aria-label="Next deleted transactions">→</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="transaction-history-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="history-title">
+    <div class="modal-card wide-modal">
+      <div class="modal-head"><h2 id="history-title">Transaction history</h2>
+        <button class="close" id="close-transaction-history" aria-label="Close transaction history">×</button></div>
+      <ol id="transaction-history-list"></ol>
+      <div class="modal-actions">
+        <button class="ghost" id="history-previous" aria-label="Previous history page">←</button>
+        <button class="ghost" id="history-next" aria-label="Next history page">→</button>
+      </div>
+    </div>
+  </div>
+
   <datalist id="category-suggestions"></datalist>
 
-  <div id="toast" class="toast hidden"></div>
+  <div id="toast" class="toast hidden" role="status"></div>
   <script type="module" src="/assets/app.js"></script>
 </body>
 </html>

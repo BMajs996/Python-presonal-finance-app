@@ -34,7 +34,7 @@ class ReportRepository(BaseRepository):
                 SELECT t.category, SUM(t.amount_cents) total_cents
                 FROM transactions t
                 JOIN accounts a ON a.id=t.account_id
-                WHERE t.type='expense' AND a.currency=?
+                WHERE t.deleted_at IS NULL AND t.type='expense' AND a.currency=?
                   AND t.date BETWEEN ? AND ?
                 GROUP BY t.category
                 ORDER BY total_cents DESC
@@ -78,7 +78,7 @@ class ReportRepository(BaseRepository):
             SELECT t.type, COALESCE(SUM(t.amount_cents),0) total_cents
             FROM transactions t
             JOIN accounts a ON a.id=t.account_id
-            WHERE a.currency=? AND t.date BETWEEN ? AND ?
+            WHERE t.deleted_at IS NULL AND a.currency=? AND t.date BETWEEN ? AND ?
             GROUP BY t.type
             """,
             (self.base_currency, start.isoformat(), end.isoformat()),
@@ -116,7 +116,7 @@ class ReportRepository(BaseRepository):
                    SUM(CASE WHEN t.type='expense' THEN t.amount_cents ELSE 0 END) expense_cents
             FROM transactions t
             JOIN accounts a ON a.id=t.account_id
-            WHERE strftime('%Y-%m', t.date) >= ? AND a.currency=?
+            WHERE t.deleted_at IS NULL AND strftime('%Y-%m', t.date) >= ? AND a.currency=?
             GROUP BY month
             ORDER BY month
             """,
@@ -142,7 +142,7 @@ class ReportRepository(BaseRepository):
             SELECT t.category, SUM(t.amount_cents) total_cents
             FROM transactions t
             JOIN accounts a ON a.id=t.account_id
-            WHERE t.type='expense'
+            WHERE t.deleted_at IS NULL AND t.type='expense'
               AND strftime('%Y-%m', t.date) >= ?
               AND a.currency=?
             GROUP BY t.category
@@ -207,7 +207,7 @@ class ReportRepository(BaseRepository):
                    SUM(t.amount_cents) total_cents
             FROM transactions t
             JOIN accounts a ON a.id=t.account_id
-            WHERE t.type='expense'
+            WHERE t.deleted_at IS NULL AND t.type='expense'
               AND strftime('%Y-%m', t.date) >= ?
               AND t.category IN ({placeholders})
               AND a.currency=?

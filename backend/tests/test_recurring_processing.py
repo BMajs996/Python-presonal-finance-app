@@ -12,6 +12,8 @@ from app.repositories.recurring_repository import RecurringRepository
 from app.schemas import RecurringCreate
 from app.services import recurring_runner
 
+from .schema_helpers import remove_transaction_audit
+
 
 def add_schedule(db):
     return db.add_recurring(
@@ -96,6 +98,7 @@ def test_version_two_upgrade_preserves_existing_schedule_and_money(db):
     db.recurring_transactions.process_due(date(2026, 2, 1))
     before = db.list_transactions()
     with conn:
+        remove_transaction_audit(conn)
         for table, _, _ in MONEY_COLUMNS:
             for operation in ("insert", "update"):
                 conn.execute(f"DROP TRIGGER money_{table}_{operation}")

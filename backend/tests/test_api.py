@@ -407,3 +407,30 @@ def test_transfer_rejects_same_account(client):
         },
     )
     assert response.status_code == 400
+
+
+def test_transaction_recovery_and_history_api(client):
+    payload = {"date": "2026-09-25", "type": "expense", "category": "Food", "amount": 12.34}
+    entry = client.post("/api/transactions", json=payload).json()
+    url = f"/api/transactions/{entry['id']}"
+    assert client.delete(url).status_code == 204
+    assert client.delete(url).status_code == 404
+    assert client.put(url, json=payload).status_code == 404
+    deleted = client.get("/api/transactions/deleted").json()
+    assert deleted["total"] == 1
+    assert deleted["items"][0]["deleted_at"]
+    history = client.get(url + "/history?limit=1").json()
+    assert history["total"] == 2
+    assert len(history["items"]) == 1
+    assert history["items"][0]["action"] == "deleted"
+    assert history["items"][0]["before_state"]["amount_cents"] == 1234
+    assert client.post(url + "/restore").json() == entry
+    assert client.post(url + "/restore").json() == entry
+    assert client.get(url + "/history").json()["total"] == 3
+    assert client.get("/api/transactions/deleted").json() == {"items": [], "total": 0}
+    assert client.get("/api/transactions").json()["items"] == [entry]
+    assert client.post("/api/transactions/99999/restore").status_code == 404
+    assert client.get("/api/transactions/99999/history").status_code == 404
+    for path in ("/api/transactions/deleted", url + "/history"):
+        assert client.get(path + "?limit=0").status_code == 422
+        assert client.get(path + "?offset=-1").status_code == 422
