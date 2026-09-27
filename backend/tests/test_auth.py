@@ -236,3 +236,40 @@ def test_owner_setup_rejects_invalid_password(tmp_path, monkeypatch, answers):
     with pytest.raises(SystemExit):
         setup_owner.main()
     assert not (tmp_path / ".env").exists()
+
+
+def test_frontend_assets_always_revalidate(raw_client):
+    for path in ("/assets/app.js", "/assets/api/client.js", "/assets/styles.css"):
+        response = raw_client.get(path)
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-cache"
+        cached = raw_client.get(path, headers={"If-None-Match": response.headers["etag"]})
+        assert cached.status_code == 304
+        assert cached.headers["cache-control"] == "no-cache"
+
+
+def test_pages_reference_versioned_module_graph(raw_client):
+    from app.main import asset_revision
+
+    prefix = f"/assets/{asset_revision}/"
+    assert prefix + "login.js" in raw_client.get("/login").text
+    login_client(raw_client)
+    page = raw_client.get("/")
+    assert prefix + "app.js" in page.text
+    assert 'src="/assets/app.js"' not in page.text
+    for name in ("app.js", "api/client.js", "views/dashboard.js", "styles.css", "vendor/chart.umd.js"):
+        response = raw_client.get(prefix + name)
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-cache"
+
+
+def test_frontend_revision_changes_with_imported_modules(tmp_path):
+    from app.frontend_assets import frontend_revision
+
+    (tmp_path / "app.js").write_text('import "./client.js";')
+    client = tmp_path / "client.js"
+    client.write_text("export const version = 1;")
+    first = frontend_revision(tmp_path)
+    assert first == frontend_revision(tmp_path)
+    client.write_text("export const version = 2;")
+    assert first != frontend_revision(tmp_path)

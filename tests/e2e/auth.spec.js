@@ -26,3 +26,19 @@ test("cross-origin and missing-CSRF writes are rejected", async ({ page, appURL 
   await page.context().setExtraHTTPHeaders({ Origin: appURL });
   expect((await page.request.post(appURL + "/api/accounts", { data: { name: "Blocked" } })).status()).toBe(403);
 });
+
+
+test("release URLs bypass obsolete unversioned scripts", async ({ page, appURL }) => {
+  await page.route(appURL + "/assets/app.js", route => route.fulfill({
+    contentType: "text/javascript", body: "window.obsoleteAppLoaded = true;",
+  }));
+  await page.route(appURL + "/assets/api/client.js", route => route.fulfill({
+    contentType: "text/javascript", body: "throw new Error('Obsolete client');",
+  }));
+  await page.reload();
+  await expect(page.locator("#account-list")).toContainText("Main Account");
+  expect(await page.evaluate(() => window.obsoleteAppLoaded)).toBeUndefined();
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page).toHaveURL(appURL + "/login");
+  expect((await page.request.get(appURL + "/api/accounts")).status()).toBe(401);
+});
