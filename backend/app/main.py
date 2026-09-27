@@ -2,7 +2,6 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .api import (
@@ -20,6 +19,7 @@ from .api.errors import register_error_handlers
 from .core.auth_middleware import ConfiguredCORS, OwnerAccessMiddleware
 from .core.config import settings
 from .database_factory import open_database
+from .frontend_assets import frontend_page, frontend_revision
 from .schemas import HealthResponse
 from .services.auth_service import initialize_auth
 from .services.recurring_runner import run_recurring
@@ -39,6 +39,8 @@ async def lifespan(app: FastAPI):
         stop.set()
         await runner
 
+
+asset_revision = frontend_revision(settings.frontend_path)
 
 app = FastAPI(
     title=settings.app_name,
@@ -70,12 +72,13 @@ def health():
 
 @app.get("/login", include_in_schema=False)
 def login_page():
-    return FileResponse(settings.frontend_path / "login.html")
+    return frontend_page(settings.frontend_path, "login.html", asset_revision)
 
 
 @app.get("/")
 def index():
-    return FileResponse(settings.frontend_path / "index.html")
+    return frontend_page(settings.frontend_path, "index.html", asset_revision)
 
 
+app.mount(f"/assets/{asset_revision}", StaticFiles(directory=settings.frontend_path), name="frontend-release")
 app.mount("/assets", StaticFiles(directory=settings.frontend_path), name="frontend-assets")

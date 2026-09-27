@@ -62,6 +62,8 @@ class OwnerAccessMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
         if protected or path.startswith("/api/auth/") or path == "/login":
             response.headers["Cache-Control"] = "no-store"
+        elif path.startswith("/assets/"):
+            response.headers["Cache-Control"] = "no-cache"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         return response
