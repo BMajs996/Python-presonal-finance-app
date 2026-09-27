@@ -3,6 +3,8 @@ from typing import Any
 
 import psycopg
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from ..database_errors import constraint_message
@@ -15,6 +17,18 @@ ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
 
 
 def register_error_handlers(app: FastAPI) -> None:
+    @app.exception_handler(RequestValidationError)
+    async def validation_handler(request: Request, exc: RequestValidationError):
+        if request.url.path.startswith("/api/auth/"):
+            # Pydantic error inputs can contain submitted credentials.
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "detail": [{key: item[key] for key in ("loc", "msg", "type")} for item in exc.errors()]
+                },
+            )
+        return await request_validation_exception_handler(request, exc)
+
     @app.exception_handler(psycopg.IntegrityError)
     @app.exception_handler(sqlite3.IntegrityError)
     async def reconciliation_constraint(
