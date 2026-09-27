@@ -116,11 +116,11 @@ class ReportRepository(BaseRepository):
                    SUM(CASE WHEN t.type='expense' THEN t.amount_cents ELSE 0 END) expense_cents
             FROM transactions t
             JOIN accounts a ON a.id=t.account_id
-            WHERE t.deleted_at IS NULL AND substr(t.date, 1, 7) >= ? AND a.currency=?
+            WHERE t.deleted_at IS NULL AND t.date >= ? AND a.currency=?
             GROUP BY month
             ORDER BY month
             """,
-            (start_month, self.base_currency),
+            (start_month + "-01", self.base_currency),
         ).fetchall()
         for row in rows:
             if row["month"] not in monthly:
@@ -143,13 +143,13 @@ class ReportRepository(BaseRepository):
             FROM transactions t
             JOIN accounts a ON a.id=t.account_id
             WHERE t.deleted_at IS NULL AND t.type='expense'
-              AND substr(t.date, 1, 7) >= ?
+              AND t.date >= ?
               AND a.currency=?
             GROUP BY t.category
             ORDER BY total_cents DESC
             LIMIT 10
             """,
-            (start_month, self.base_currency),
+            (start_month + "-01", self.base_currency),
         ).fetchall()
         top_categories = [
             {
@@ -173,11 +173,11 @@ class ReportRepository(BaseRepository):
 
         series = list(monthly.values())
         total_income = Money(
-            sum(Money.from_amount(item["income"], self.base_currency).cents for item in series),
+            sum(int(row["income_cents"] or 0) for row in rows if row["month"] in monthly),
             self.base_currency,
         )
         total_expenses = Money(
-            sum(Money.from_amount(item["expenses"], self.base_currency).cents for item in series),
+            sum(int(row["expense_cents"] or 0) for row in rows if row["month"] in monthly),
             self.base_currency,
         )
         net = total_income - total_expenses
@@ -208,7 +208,7 @@ class ReportRepository(BaseRepository):
             FROM transactions t
             JOIN accounts a ON a.id=t.account_id
             WHERE t.deleted_at IS NULL AND t.type='expense'
-              AND substr(t.date, 1, 7) >= ?
+              AND t.date >= ?
               AND t.category IN ({placeholders})
               AND a.currency=?
             GROUP BY month, t.category
@@ -217,6 +217,6 @@ class ReportRepository(BaseRepository):
             (row["month"], row["category"]): int(row["total_cents"] or 0)
             for row in self.conn.execute(
                 trend_sql,
-                (start_month, *categories, self.base_currency),
+                (start_month + "-01", *categories, self.base_currency),
             ).fetchall()
         }

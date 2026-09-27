@@ -20,3 +20,10 @@ export const listDeletedTransactions = (offset = 0) =>
 
 export const transactionHistory = (id, offset = 0) =>
   request(`/api/transactions/${id}/history?limit=50&offset=${offset}`);
+
+export const previewImport = rows => request("/api/transactions/import/preview", {
+  method: "POST", body: JSON.stringify({ rows }),
+});
+export const commitImport = (batch_id, rows) => request("/api/transactions/import", {
+  method: "POST", body: JSON.stringify({ batch_id, rows }),
+});

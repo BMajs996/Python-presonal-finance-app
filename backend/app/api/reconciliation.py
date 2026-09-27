@@ -1,6 +1,14 @@
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import ValidationError
 
-from ..reconciliation_schemas import ClearedEntry, StatementCreate, StatementDetail, StatementSummary
+from ..reconciliation_schemas import (
+    ClearedEntry,
+    EntryCursor,
+    StatementCreate,
+    StatementDetail,
+    StatementSummary,
+    StatementTotals,
+)
 from ..repositories.reconciliation_repository import ReconciliationRepository
 from ..schemas import AccountResponse
 from ..services.reconciliation_service import ReconciliationService
@@ -31,11 +39,20 @@ def accounts(service=Depends(get_service)):
 
 
 @router.get("/{ident}", response_model=StatementDetail)
-def detail(ident: int, service=Depends(get_service)):
-    return service.detail(ident)
+def detail(
+    ident: int,
+    limit: int = Query(default=100, ge=1, le=200),
+    cursor: str | None = Query(default=None, max_length=200),
+    service=Depends(get_service),
+):
+    try:
+        after = EntryCursor.model_validate_json(cursor) if cursor else None
+    except ValidationError as exc:
+        raise HTTPException(422, "Invalid entry cursor") from exc
+    return service.detail(ident, limit, after)
 
 
-@router.put("/{ident}/entries", response_model=StatementDetail)
+@router.put("/{ident}/entries", response_model=StatementTotals)
 def clear(ident: int, payload: ClearedEntry, service=Depends(get_service)):
     return service.clear(ident, payload)
 

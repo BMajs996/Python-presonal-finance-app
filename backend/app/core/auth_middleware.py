@@ -29,6 +29,8 @@ class ConfiguredCORS:
 
 class OwnerAccessMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
+        if settings.environment == "production" and request.url.scheme != "https":
+            return JSONResponse({"detail": "HTTPS required"}, status_code=400)
         path = request.url.path
         protected = (path.startswith("/api/") and path not in {"/api/health", "/api/auth/login"}) or path in {
             "/",
@@ -64,6 +66,12 @@ class OwnerAccessMiddleware(BaseHTTPMiddleware):
             response.headers["Cache-Control"] = "no-store"
         elif path.startswith("/assets/"):
             response.headers["Cache-Control"] = "no-cache"
+        if path in {"/", "/login"} or path.startswith("/assets/"):
+            response.headers["Content-Security-Policy-Report-Only"] = (
+                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data:; connect-src 'self'; object-src 'none'; "
+                "base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+            )
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         return response

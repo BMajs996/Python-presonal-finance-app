@@ -1,7 +1,8 @@
 from datetime import date
 
 from ..domain.errors import Conflict, InvalidOperation, NotFound
-from ..domain.money import Money
+from ..domain.money import MAX_STATEMENT_BALANCE, Money
+from ..reconciliation_schemas import EntryCursor
 
 
 class ReconciliationService:
@@ -14,36 +15,43 @@ class ReconciliationService:
     def list(self, account_id: int):
         return self.repository.list(account_id)
 
-    def detail(self, ident: int):
+    def summary(self, ident: int):
         statement = self.repository.get(ident)
-        entries = self.repository.entries(statement)
-        cleared = statement["opening_balance_cents"] + sum(
-            entry["amount_cents"] for entry in entries if entry["cleared"]
-        )
+        totals = self.repository.totals(statement)
+        cleared = statement["opening_balance_cents"] + totals.pop("cleared_cents")
         return {
             **statement,
-            "entries": entries,
+            **totals,
             "cleared_balance_cents": cleared,
             "difference_cents": statement["closing_balance_cents"] - cleared,
         }
 
+    def detail(self, ident: int, limit=100, cursor=None):
+        statement = self.summary(ident)
+        entries = self.repository.entries(statement, limit + 1, cursor)
+        next_cursor = None
+        if len(entries) > limit:
+            last = entries[limit - 1]
+            next_cursor = EntryCursor(
+                date=last["date"], kind=last["kind"], entry_id=last["entry_id"]
+            ).model_dump_json()
+        return {**statement, "entries": entries[:limit], "next_cursor": next_cursor}
+
     def create(self, payload):
         if payload.closing_date > date.today():
             raise InvalidOperation("Statement closing date cannot be in the future")
-        closing = Money.from_amount(payload.closing_balance).cents
-        if abs(closing) > 9_000_000_000_000_000:
-            raise InvalidOperation("Statement balance is too large")
+        closing = Money.from_amount(payload.closing_balance, maximum=MAX_STATEMENT_BALANCE).cents
         repo = self.repository
         with repo.conn:
             repo.conn.execute("BEGIN IMMEDIATE")
             repo.resolve_account_id(payload.account_id)
-            previous = repo.list(payload.account_id)
-            if any(row["status"] == "draft" for row in previous):
+            previous = repo.latest(payload.account_id)
+            if repo.has_draft(payload.account_id):
                 raise Conflict("This account already has a draft statement")
-            if previous and payload.closing_date.isoformat() <= previous[0]["closing_date"]:
+            if previous and payload.closing_date.isoformat() <= previous["closing_date"]:
                 raise InvalidOperation("Closing date must be after the last completed statement")
             opening = (
-                previous[0]["closing_balance_cents"]
+                previous["closing_balance_cents"]
                 if previous
                 else repo.conn.execute(
                     "SELECT opening_balance_cents FROM accounts WHERE id=?", (payload.account_id,)
@@ -57,26 +65,23 @@ class ReconciliationService:
         repo = self.repository
         with repo.conn:
             repo.conn.execute("BEGIN IMMEDIATE")
-            statement = self.detail(ident)
+            statement = repo.get(ident)
             if statement["status"] != "draft":
                 raise Conflict("Completed statements are read-only")
             repo.resolve_account_id(statement["account_id"])
-            if not any(
-                row["kind"] == payload.kind and row["entry_id"] == payload.entry_id
-                for row in statement["entries"]
-            ):
+            if not repo.eligible(statement, payload.kind, payload.entry_id):
                 raise NotFound("Entry is not available for this statement")
             repo.clear(statement, payload.kind, payload.entry_id, payload.cleared)
-            result = self.detail(ident)
+            result = self.summary(ident)
         return result
 
     def complete(self, ident: int):
         repo = self.repository
         with repo.conn:
             repo.conn.execute("BEGIN IMMEDIATE")
-            statement = self.detail(ident)
+            statement = self.summary(ident)
             if statement["status"] == "completed":
-                return statement
+                return self.detail(ident)
             repo.resolve_account_id(statement["account_id"])
             if statement["difference_cents"] != 0:
                 raise Conflict("Statement difference must be zero before completion")

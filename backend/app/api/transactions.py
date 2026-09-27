@@ -1,9 +1,14 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from ..domain.errors import NotFound
+from ..repositories.transaction_repository import TransactionRepository
 from ..schemas import (
+    CsvImport,
+    CsvPreview,
+    CsvResult,
+    CsvRows,
     DeletedTransactionPage,
     TransactionAuditPage,
     TransactionCreate,
@@ -11,6 +16,7 @@ from ..schemas import (
     TransactionResponse,
     TransactionUpdate,
 )
+from ..services.csv_import_service import CsvImportService
 from ..services.finance_service import FinanceService
 from .dependencies import get_finance_service
 from .errors import ERROR_RESPONSES
@@ -87,3 +93,19 @@ def update_transaction(
 def delete_transaction(transaction_id: int, service: FinanceService = Depends(get_finance_service)):
     if not service.delete_transaction(transaction_id):
         raise NotFound("Transaction not found")
+
+
+def get_csv_service(request: Request):
+    database = request.app.state.database
+    with database.connection() as connection:
+        yield CsvImportService(TransactionRepository(connection, database.base_currency))
+
+
+@router.post("/import/preview", response_model=CsvPreview)
+def preview_csv(payload: CsvRows, service=Depends(get_csv_service)):
+    return service.preview(payload.rows)
+
+
+@router.post("/import", response_model=CsvResult)
+def import_csv(payload: CsvImport, service=Depends(get_csv_service)):
+    return service.commit(payload)

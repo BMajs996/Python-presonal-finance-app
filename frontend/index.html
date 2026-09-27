@@ -342,7 +342,11 @@
             <div><dt>Cleared balance</dt><dd id="reconciliation-cleared"></dd></div>
             <div><dt>Difference</dt><dd id="reconciliation-difference" aria-live="polite"></dd></div>
           </dl>
-          <p id="reconciliation-entry-count"></p>
+          <div class="row-actions reconciliation-pagination">
+            <p id="reconciliation-entry-count"></p>
+            <button class="ghost" id="reconciliation-previous" type="button" disabled>Previous</button>
+            <button class="ghost" id="reconciliation-next" type="button" disabled>Next</button>
+          </div>
           <div class="table-wrap"><table>
             <thead><tr><th>Cleared</th><th>Date</th><th>Entry</th><th>Amount</th></tr></thead>
             <tbody id="reconciliation-entries"></tbody>

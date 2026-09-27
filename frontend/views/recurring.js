@@ -3,7 +3,7 @@ import { bindModalClose, closeModal, openModal } from "../components/modal.js";
 import { reportError, toast } from "../components/toast.js";
 import { todayIso } from "../utils/dates.js";
 import { $ } from "../utils/dom.js";
-import { escapeHtml } from "../utils/escape.js";
+import { escapeHtml, transactionClass } from "../utils/escape.js";
 import { money } from "../utils/money.js";
 import { loadReferenceData } from "./reference-data.js";
 
@@ -16,10 +16,10 @@ export async function loadRecurring() {
         <td>${escapeHtml(recurring.category)}</td>
         <td>${escapeHtml(recurring.description || "")}</td>
         <td>${escapeHtml(recurring.account_name || "Main Account")}</td>
-        <td class="${recurring.type}">${recurring.type}</td>
-        <td class="amount ${recurring.type}">${money(recurring.amount, recurring.currency)}</td>
-        <td>${recurring.frequency}</td>
-        <td>${recurring.next_date}</td>
+        <td class="${transactionClass(recurring.type)}">${escapeHtml(recurring.type)}</td>
+        <td class="amount ${transactionClass(recurring.type)}">${money(recurring.amount, recurring.currency)}</td>
+        <td>${escapeHtml(recurring.frequency)}</td>
+        <td>${escapeHtml(recurring.next_date)}</td>
         <td><div class="row-actions">
           <button class="ghost" data-action="edit-recurring" data-id="${recurring.id}">Edit</button>
           <button class="ghost" data-action="delete-recurring" data-id="${recurring.id}">Delete</button>

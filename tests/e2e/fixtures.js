@@ -34,6 +34,11 @@ export const test = base.extend({
   },
   page: async ({ page, appURL }, use) => {
     const errors = [];
+    await page.addInitScript(() => {
+      window.cspViolations = [];
+      document.addEventListener("securitypolicyviolation", event =>
+        window.cspViolations.push(event.violatedDirective));
+    });
     page.on("pageerror", error => errors.push(error.message));
     await page.route("**/*", route => {
       const url = route.request().url();
@@ -49,6 +54,7 @@ export const test = base.extend({
     await expect(page.locator("#account-list")).toContainText("Main Account");
     await use(page);
     expect(errors).toEqual([]);
+    expect(await page.evaluate(() => window.cspViolations)).toEqual([]);
   },
 });
 export { expect };

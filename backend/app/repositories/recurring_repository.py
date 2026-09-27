@@ -4,6 +4,8 @@ from ..domain.money import Money
 from ..domain.recurrence import calculate_next_date
 from .base_repository import BaseRepository
 
+BATCH_SIZE = 100
+
 
 class RecurringRepository(BaseRepository):
     def list(self):
@@ -99,23 +101,23 @@ class RecurringRepository(BaseRepository):
         if self.conn.in_transaction:
             raise RuntimeError("Recurring processing requires its own transaction")
         created = 0
-        with self.conn:
-            # Reserve the writer before reading schedules, including across processes.
-            self.conn.execute("BEGIN IMMEDIATE")
-            rows = self.conn.execute(
-                """
-                SELECT id, type, category, amount, amount_cents, description,
-                       frequency, next_date, account_id
-                FROM recurring_transactions
-                WHERE active=1 AND next_date <= ?
-                ORDER BY next_date, id
-                """,
-                (through.isoformat(),),
-            ).fetchall()
-            for row in rows:
+        schedules = self.conn.execute(
+            "SELECT id FROM recurring_transactions WHERE active=1 AND next_date<=? ORDER BY next_date,id",
+            (through.isoformat(),),
+        ).fetchall()
+        for schedule in schedules:
+            with self.conn:
+                # Re-read under the writer lock; another worker may already have advanced it.
+                self.conn.execute("BEGIN IMMEDIATE")
+                row = self.conn.execute(
+                    "SELECT * FROM recurring_transactions WHERE id=? AND active=1 AND next_date<=?",
+                    (schedule["id"], through.isoformat()),
+                ).fetchone()
+                if row is None:
+                    continue
                 occurrence = date.fromisoformat(row["next_date"])
                 guard = 0
-                while occurrence <= through:
+                while occurrence <= through and guard < BATCH_SIZE:
                     claim = self.conn.execute(
                         """
                         INSERT INTO recurring_occurrences(recurring_id, due_date) VALUES (?, ?)
@@ -143,10 +145,6 @@ class RecurringRepository(BaseRepository):
                     created += claim.rowcount
                     occurrence = calculate_next_date(row["frequency"], occurrence)
                     guard += 1
-                    if guard > 10000:
-                        raise RuntimeError(
-                            f"Recurring transaction {row['id']} produced too many occurrences."
-                        )
 
                 self.conn.execute(
                     "UPDATE recurring_transactions SET next_date=? WHERE id=?",

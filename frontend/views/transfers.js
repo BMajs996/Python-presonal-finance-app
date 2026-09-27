@@ -11,7 +11,7 @@ export async function loadTransfers() {
   const rows = await listTransfers();
   $("transfer-table").innerHTML = rows.length
     ? rows.map((transfer) => `<tr>
-        <td>${transfer.date}</td>
+        <td>${escapeHtml(transfer.date)}</td>
         <td>${escapeHtml(transfer.from_account_name)}</td>
         <td>${escapeHtml(transfer.to_account_name)}</td>
         <td class="amount">${money(transfer.amount, transfer.currency)}</td>

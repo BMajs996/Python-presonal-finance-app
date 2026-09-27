@@ -145,3 +145,32 @@ def test_runner_retries_errors_and_stops_cleanly(db, monkeypatch):
 
     asyncio.run(exercise())
     assert len(calls) >= 2
+
+
+def test_large_backlog_makes_bounded_progress_without_starving_new_schedule(db):
+    from datetime import timedelta
+
+    from app.repositories.recurring_repository import BATCH_SIZE
+
+    backlog = db.add_recurring(
+        RecurringCreate(
+            type="expense",
+            category="Backlog",
+            amount="0.01",
+            frequency="daily",
+            start_date=date(1990, 1, 1),
+        )
+    )
+    recent = add_schedule(db)
+    through = date(2026, 4, 1)
+    assert db.recurring_transactions.process_due(through) == BATCH_SIZE + 3
+    assert db.recurring_transactions.get(recent["id"])["next_date"] == "2026-05-01"
+    expected = (through - date(1990, 1, 2)).days + 1
+    assert expected > 10000
+    while db.recurring_transactions.get(backlog["id"])["next_date"] <= through.isoformat():
+        assert 0 < db.recurring_transactions.process_due(through) <= BATCH_SIZE
+    assert db.list_transactions()[1] == expected + 3
+    assert (
+        db.recurring_transactions.get(backlog["id"])["next_date"] == (through + timedelta(days=1)).isoformat()
+    )
+    assert db.recurring_transactions.process_due(through) == 0

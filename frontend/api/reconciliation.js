@@ -1,7 +1,8 @@
 import { request } from "./client.js";
 
 export const listStatements = account => request("/api/reconciliations?account_id=" + account);
-export const getStatement = id => request("/api/reconciliations/" + id);
+export const getStatement = (id, cursor = null) => request("/api/reconciliations/" + id
+  + (cursor ? "?" + new URLSearchParams({ cursor }) : ""));
 export const createStatement = data => request("/api/reconciliations", { method: "POST", body: JSON.stringify(data) });
 export const clearEntry = (id, data) => request("/api/reconciliations/" + id + "/entries", { method: "PUT", body: JSON.stringify(data) });
 export const completeStatement = id => request("/api/reconciliations/" + id + "/complete", { method: "POST" });

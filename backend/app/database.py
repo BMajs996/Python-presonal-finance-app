@@ -51,6 +51,12 @@ class FinanceDatabase:
                 connection.rollback()
             connection.close()
 
+    @contextmanager
+    def operational_transaction(self):
+        with self.connection() as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            yield connection
+
     def _initialize_schema(self):
         # Create legacy tables first so migrations work for fresh and existing databases.
         self.conn.executescript(
