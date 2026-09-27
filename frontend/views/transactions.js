@@ -1,5 +1,7 @@
 import {
   createTransaction,
+  previewImport,
+  commitImport,
   deleteTransaction,
   listTransactions,
   updateTransaction,
@@ -7,10 +9,10 @@ import {
 } from "../api/transactions.js";
 import { bindModalClose, closeModal, openModal } from "../components/modal.js";
 import { reportError, toast } from "../components/toast.js";
-import { csvValue, parseCsv } from "../utils/csv.js";
+import { csvText, csvValue, parseCsv } from "../utils/csv.js";
 import { isIsoDate, todayIso, validateDateRange } from "../utils/dates.js";
 import { $ } from "../utils/dom.js";
-import { escapeAttr, escapeHtml } from "../utils/escape.js";
+import { escapeAttr, escapeHtml, transactionClass } from "../utils/escape.js";
 import { getBaseCurrency, money } from "../utils/money.js";
 import { getAccounts, loadReferenceData } from "./reference-data.js";
 import { initTransactionHistory, showTransactionHistory } from "./transaction-history.js";
@@ -18,6 +20,8 @@ import { initTransactionHistory, showTransactionHistory } from "./transaction-hi
 let transactionsCache = [];
 let transactionRequestId = 0;
 let csvPreviewRows = [];
+let csvBatchId = null;
+let importing = false;
 
 function filterParams() {
   validateDateRange($("date-start-filter").value, $("date-end-filter").value);
@@ -44,12 +48,12 @@ export async function loadTransactions() {
   transactionsCache = data.items;
   $("transaction-count").textContent = `${data.total} record${data.total === 1 ? "" : "s"}`;
   $("transaction-table").innerHTML = data.items.map((transaction) => `<tr>
-    <td>${transaction.date}</td>
+    <td>${escapeHtml(transaction.date)}</td>
     <td>${escapeHtml(transaction.account_name || "Main Account")}</td>
     <td>${escapeHtml(transaction.category)}</td>
     <td>${escapeHtml(transaction.description || "")}</td>
-    <td class="${transaction.type}">${transaction.type}</td>
-    <td class="amount ${transaction.type}">${transaction.type === "income" ? "+" : "-"}${money(transaction.amount, transaction.currency)}</td>
+    <td class="${transactionClass(transaction.type)}">${escapeHtml(transaction.type)}</td>
+    <td class="amount ${transactionClass(transaction.type)}">${transaction.type === "income" ? "+" : "-"}${money(transaction.amount, transaction.currency)}</td>
     <td><div class="row-actions">
       <button class="ghost" data-action="edit-transaction" data-id="${transaction.id}">Edit</button>
       <button class="ghost" data-action="transaction-history" data-id="${transaction.id}">History</button>
@@ -78,6 +82,7 @@ async function fetchAll(params = new URLSearchParams()) {
     params.set("limit", "500");
     params.set("offset", String(offset));
     const data = await listTransactions(params);
+    if (data.total > 10000) throw new Error("Export is limited to 10,000 transactions. Narrow the filters.");
     items.push(...data.items);
     if (items.length >= data.total || data.items.length === 0) return items;
     offset += data.items.length;
@@ -88,7 +93,7 @@ async function exportCsv() {
   const rows = await fetchAll(filterParams());
   const headers = ["date", "type", "category", "amount", "currency", "description", "account_id", "account_name"];
   const lines = [headers.join(",")].concat(
-    rows.map((transaction) => headers.map((key) => csvValue(transaction[key])).join(",")),
+    rows.map((transaction) => headers.map((key) => ["amount", "account_id"].includes(key) ? csvValue(transaction[key]) : csvText(transaction[key])).join(",")),
   );
   const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
   const link = document.createElement("a");
@@ -127,16 +132,6 @@ function mapCsvRow(headers, values) {
   };
 }
 
-function transactionKey(transaction) {
-  return [
-    transaction.date,
-    transaction.type,
-    Number(transaction.amount).toFixed(2),
-    String(transaction.description || "").trim().toLowerCase(),
-    transaction.account_id || "main",
-  ].join("|");
-}
-
 function validationErrors(mapped) {
   const errors = [];
   const { payload } = mapped;
@@ -144,6 +139,10 @@ function validationErrors(mapped) {
   if (!["income", "expense"].includes(payload.type)) errors.push("Type must be income or expense");
   if (!payload.category.trim()) errors.push("Category is required");
   if (!Number.isFinite(payload.amount) || payload.amount <= 0) errors.push("Amount must be positive");
+  if (payload.category.length > 100) errors.push("Category is too long");
+  if (payload.description.length > 500) errors.push("Description is too long");
+  if (payload.amount > 1000000000) errors.push("Amount exceeds the supported limit");
+  if (Number(payload.amount.toFixed(2)) !== payload.amount) errors.push("Amount must have at most two decimal places");
   if (!mapped.accountFound) errors.push("Account was not found");
   return errors;
 }
@@ -173,7 +172,9 @@ function renderCsvPreview() {
 }
 
 function closeCsvPreview() {
+  if (importing) return;
   csvPreviewRows = [];
+  csvBatchId = null;
   closeModal("csv-preview-modal");
 }
 
@@ -181,48 +182,53 @@ async function prepareCsvPreview(event) {
   const file = event.target.files?.[0];
   event.target.value = "";
   if (!file) return;
+  if (file.size > 2 * 1024 * 1024) throw new Error("CSV must be 2 MB or smaller");
   await loadReferenceData();
-  const rows = parseCsv(await file.text());
+  const rows = parseCsv(await file.text(), 1001);
   if (rows.length < 2) throw new Error("CSV must include a header row and at least one transaction");
   const headers = rows[0].map((header) => header.trim().toLowerCase());
   const missing = ["date", "type", "category", "amount"].filter((header) => !headers.includes(header));
   if (missing.length) throw new Error(`Missing CSV columns: ${missing.join(", ")}`);
 
-  const existingKeys = new Set((await fetchAll()).map(transactionKey));
-  const fileKeys = new Set();
+  csvBatchId = crypto.randomUUID();
   csvPreviewRows = rows.slice(1).map((values, index) => {
     const mapped = mapCsvRow(headers, values);
     const errors = validationErrors(mapped);
-    const key = transactionKey(mapped.payload);
-    const duplicate = errors.length === 0 && (existingKeys.has(key) || fileKeys.has(key));
-    if (!duplicate && errors.length === 0) fileKeys.add(key);
     return {
       ...mapped,
       rowNumber: index + 2,
       errors,
-      status: errors.length ? "invalid" : duplicate ? "duplicate" : "valid",
+      status: errors.length ? "invalid" : "valid",
     };
   });
+  const candidates = csvPreviewRows.filter(row => row.status === "valid");
+  if (candidates.length) {
+    const checked = await previewImport(candidates.map(row => row.payload));
+    checked.rows.forEach((result, index) => {
+      candidates[index].status = result.status;
+      candidates[index].errors = result.error ? [result.error] : [];
+    });
+  }
   renderCsvPreview();
   openModal("csv-preview-modal");
 }
 
 async function confirmCsvImport(refresh) {
-  const rows = csvPreviewRows.filter((row) => row.status === "valid");
-  let imported = 0;
-  for (const row of rows) {
-    try {
-      await createTransaction(row.payload);
-      imported += 1;
-    } catch (error) {
-      row.status = "invalid";
-      row.errors = [error.message];
-    }
+  if (importing || !csvBatchId) return;
+  const rows = csvPreviewRows.filter(row => row.status === "valid");
+  if (!rows.length) return;
+  importing = true;
+  $("csv-preview-modal").inert = true;
+  try {
+    const result = await commitImport(csvBatchId, rows.map(row => row.payload));
+    importing = false;
+    closeCsvPreview();
+    toast(`${result.imported} imported${result.duplicates ? `, ${result.duplicates} duplicates skipped` : ""}`);
+    await refresh();
+  } finally {
+    importing = false;
+    $("csv-preview-modal").inert = false;
   }
-  const failed = rows.length - imported;
-  closeCsvPreview();
-  toast(`${imported} imported${failed ? `, ${failed} failed` : ""}`);
-  await refresh();
 }
 
 export function initTransactionsView({ refresh }) {

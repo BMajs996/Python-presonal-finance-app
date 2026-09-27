@@ -3,7 +3,12 @@ export function csvValue(value) {
   return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
-export function parseCsv(text) {
+export function csvText(value) {
+  const text = String(value ?? "");
+  return csvValue(/^\s*[=+@-]/.test(text) ? "'" + text : text);
+}
+
+export function parseCsv(text, maxRows = Infinity) {
   const rows = [];
   let row = [];
   let cell = "";
@@ -24,6 +29,7 @@ export function parseCsv(text) {
       if (character === "\r" && next === "\n") index += 1;
       row.push(cell);
       if (row.some((value) => value.trim())) rows.push(row);
+      if (rows.length > maxRows) throw new Error(`CSV exceeds the ${maxRows - 1} transaction limit`);
       row = [];
       cell = "";
     } else {
@@ -33,5 +39,7 @@ export function parseCsv(text) {
 
   row.push(cell);
   if (row.some((value) => value.trim())) rows.push(row);
+  if (rows.length > maxRows) throw new Error(`CSV exceeds the ${maxRows - 1} transaction limit`);
+  if (quoted) throw new Error("CSV contains an unterminated quoted field");
   return rows;
 }

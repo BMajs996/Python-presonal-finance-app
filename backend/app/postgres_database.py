@@ -88,5 +88,12 @@ class PostgresDatabase:
             connection.rollback()
             connection.close()
 
+    @contextmanager
+    def operational_transaction(self):
+        with self.connection() as connection, connection.raw.transaction():
+            # Auth metadata must not contend with the financial writer lock.
+            connection.raw.execute("SELECT pg_advisory_xact_lock(%s)", (WRITE_LOCK + 1,))
+            yield connection
+
     def close(self):
         self.conn.close()

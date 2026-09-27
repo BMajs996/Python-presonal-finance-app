@@ -12,3 +12,7 @@ export function escapeHtml(value) {
 }
 
 export const escapeAttr = escapeHtml;
+
+export function transactionClass(type) {
+  return type === "income" || type === "expense" ? type : "";
+}

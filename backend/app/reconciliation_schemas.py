@@ -4,11 +4,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from .domain.money import MAX_STATEMENT_BALANCE
+
 
 class StatementCreate(BaseModel):
     account_id: int = Field(gt=0)
     closing_date: date
-    closing_balance: Decimal = Field(decimal_places=2, ge=-90000000000000, le=90000000000000)
+    closing_balance: Decimal = Field(decimal_places=2, ge=-MAX_STATEMENT_BALANCE, le=MAX_STATEMENT_BALANCE)
 
 
 class ClearedEntry(BaseModel):
@@ -39,9 +41,21 @@ class StatementEntry(BaseModel):
     cleared: bool
 
 
-class StatementDetail(StatementSummary):
+class StatementTotals(StatementSummary):
     account_name: str
     currency: str
     cleared_balance_cents: int
     difference_cents: int
+    total_entries: int
+    cleared_count: int
+
+
+class StatementDetail(StatementTotals):
     entries: list[StatementEntry]
+    next_cursor: str | None
+
+
+class EntryCursor(BaseModel):
+    date: date
+    kind: Literal["transaction", "transfer"]
+    entry_id: int = Field(gt=0)

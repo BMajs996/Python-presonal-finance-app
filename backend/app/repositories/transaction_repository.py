@@ -70,28 +70,35 @@ class TransactionRepository(BaseRepository):
         return self._to_domain(row).to_dict() if row else None
 
     def add(self, payload):
+        with self.conn:
+            self.conn.execute("BEGIN IMMEDIATE")
+            transaction_id = self.insert_uncommitted(payload)
+        return self.get(transaction_id)
+
+    def insert_uncommitted(self, payload):
+        if not self.conn.in_transaction:
+            raise RuntimeError("Transaction insertion requires a write transaction")
         account_id = self.resolve_account_id(payload.account_id)
         amount = Money.from_amount(payload.amount, self.account_currency(account_id))
-        with self.conn:
-            cursor = self.conn.execute(
-                """
-                INSERT INTO transactions(
-                    date, type, category, amount, amount_cents, description, account_id
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id
-                """,
-                (
-                    payload.date.isoformat(),
-                    payload.type,
-                    payload.category.strip(),
-                    amount.as_float(),
-                    amount.cents,
-                    payload.description.strip(),
-                    account_id,
-                ),
+        cursor = self.conn.execute(
+            """
+            INSERT INTO transactions(
+                date, type, category, amount, amount_cents, description, account_id
             )
-            transaction_id = self.inserted_id(cursor)
-        return self.get(transaction_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id
+            """,
+            (
+                payload.date.isoformat(),
+                payload.type,
+                payload.category.strip(),
+                amount.as_float(),
+                amount.cents,
+                payload.description.strip(),
+                account_id,
+            ),
+        )
+        transaction_id = self.inserted_id(cursor)
+        return transaction_id
 
     def update(self, transaction_id: int, payload):
         existing = self.get(transaction_id)

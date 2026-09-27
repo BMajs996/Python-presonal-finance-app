@@ -57,7 +57,7 @@ class BalanceRepository(BaseRepository):
         return int(opening or 0), [dict(row) for row in daily]
 
     def monthly_history_cents(self, labels: list[str]):
-        start_month = labels[0]
+        start_month = labels[0] + "-01"
         opening = self.conn.execute(
             """
             SELECT COALESCE((
@@ -69,7 +69,7 @@ class BalanceRepository(BaseRepository):
                                        THEN t.amount_cents ELSE -t.amount_cents END)
                        FROM transactions t
                        JOIN accounts a ON a.id=t.account_id
-                       WHERE t.deleted_at IS NULL AND substr(t.date, 1, 7) < ? AND a.currency=?
+                       WHERE t.deleted_at IS NULL AND t.date < ? AND a.currency=?
                    ), 0) AS balance_cents
             """,
             (self.base_currency, start_month, self.base_currency),
@@ -83,7 +83,7 @@ class BalanceRepository(BaseRepository):
                                 THEN t.amount_cents ELSE -t.amount_cents END) change_cents
                 FROM transactions t
                 JOIN accounts a ON a.id=t.account_id
-                WHERE t.deleted_at IS NULL AND substr(t.date, 1, 7) >= ? AND a.currency=?
+                WHERE t.deleted_at IS NULL AND t.date >= ? AND a.currency=?
                 GROUP BY month
                 """,
                 (start_month, self.base_currency),

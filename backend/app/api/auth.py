@@ -20,7 +20,10 @@ class SessionResponse(BaseModel):
 @router.post("/login", response_model=SessionResponse)
 def login(payload: LoginRequest, request: Request, response: Response):
     token, csrf = AuthService(request.app.state.database).login(
-        payload.username, payload.password.get_secret_value(), request.cookies.get(COOKIE)
+        payload.username,
+        payload.password.get_secret_value(),
+        request.cookies.get(COOKIE),
+        request.client.host if request.client else "unknown",
     )
     response.set_cookie(
         COOKIE,

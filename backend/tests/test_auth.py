@@ -1,4 +1,5 @@
 import time
+from types import SimpleNamespace
 
 import pytest
 from app.core.config import Settings, settings
@@ -131,7 +132,7 @@ def test_bad_credentials_throttle_and_window_reset(raw_client, monkeypatch):
         assert response.json() == {"detail": "Invalid username or password"}
     response = raw_client.post("/api/auth/login", json=payload, headers=headers)
     assert response.status_code == 429
-    assert response.headers["retry-after"] == "60"
+    assert 1 <= int(response.headers["retry-after"]) <= 60
     future = time.time() + 61
     monkeypatch.setattr(auth_service.time, "time", lambda: future)
     login_client(raw_client)
@@ -157,9 +158,10 @@ def test_unconfigured_owner_and_password_redaction(raw_client, monkeypatch):
 
 def test_cookie_attributes(raw_client, monkeypatch):
     monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "cors_origins", "https://testserver")
     response = raw_client.post(
-        "/api/auth/login",
-        headers={"Origin": "http://testserver"},
+        "https://testserver/api/auth/login",
+        headers={"Origin": "https://testserver"},
         json={"username": "owner", "password": TEST_PASSWORD},
     )
     assert response.status_code == 200
@@ -273,3 +275,132 @@ def test_frontend_revision_changes_with_imported_modules(tmp_path):
     assert first == frontend_revision(tmp_path)
     client.write_text("export const version = 2;")
     assert first != frontend_revision(tmp_path)
+
+
+def test_production_rejects_plaintext_even_with_spoofed_proxy_header(raw_client, monkeypatch):
+    monkeypatch.setattr(settings, "environment", "production")
+    response = raw_client.post(
+        "/api/auth/login",
+        headers={"Origin": "http://testserver", "X-Forwarded-Proto": "https"},
+        json={"username": "owner", "password": TEST_PASSWORD},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "HTTPS required"
+
+
+def test_content_security_policy_is_report_only(raw_client):
+    response = raw_client.get("/login")
+    assert "script-src 'self'" in response.headers["content-security-policy-report-only"]
+    assert "content-security-policy" not in response.headers
+
+
+def test_source_limit_does_not_lock_out_another_source(raw_client, monkeypatch):
+    from app.services import auth_service
+    from fastapi import HTTPException
+
+    service = AuthService(app.state.database)
+    monkeypatch.setattr(auth_service, "PASSWORDS", SimpleNamespace(verify=lambda *args: False))
+    for _ in range(10):
+        with pytest.raises(HTTPException) as error:
+            service.login("wrong", "wrong", None, "192.0.2.1")
+        assert error.value.status_code == 401
+    with pytest.raises(HTTPException) as error:
+        service.login("owner", TEST_PASSWORD, None, "192.0.2.1")
+    assert error.value.status_code == 429
+    monkeypatch.setattr(auth_service, "PASSWORDS", SimpleNamespace(verify=lambda *args: True))
+    token, _ = service.login("owner", TEST_PASSWORD, None, "192.0.2.2")
+    assert service.session(token) is not None
+
+
+def test_forwarded_address_cannot_reset_source_limit(raw_client, monkeypatch):
+    from app.services import auth_service
+
+    monkeypatch.setattr(auth_service, "PASSWORDS", SimpleNamespace(verify=lambda *args: False))
+    for index in range(11):
+        response = raw_client.post(
+            "/api/auth/login",
+            headers={"Origin": "http://testserver", "X-Forwarded-For": f"192.0.2.{index}"},
+            json={"username": "wrong", "password": "wrong"},
+        )
+        assert response.status_code == (401 if index < 10 else 429)
+
+
+def test_global_limit_and_remaining_retry_time(raw_client, monkeypatch):
+    from app.services import auth_service
+    from fastapi import HTTPException
+
+    now = int(time.time())
+    monkeypatch.setattr(auth_service.time, "time", lambda: now)
+    with app.state.database.operational_transaction() as conn:
+        conn.execute("UPDATE auth_login_limit SET window_start=?,attempts=100", (now - 20,))
+    with pytest.raises(HTTPException) as error:
+        AuthService(app.state.database).login("owner", TEST_PASSWORD, None, "new-source")
+    assert error.value.status_code == 429
+    assert error.value.headers["Retry-After"] == "40"
+
+
+def test_session_activity_is_throttled_and_expiry_stays_bounded(raw_client, monkeypatch):
+    from app.services import auth_service
+
+    login_client(raw_client)
+    token = raw_client.cookies.get(COOKIE)
+    service = AuthService(app.state.database)
+    with app.state.database.connection() as conn:
+        initial = conn.execute("SELECT last_seen FROM auth_sessions").fetchone()[0]
+    monkeypatch.setattr(auth_service.time, "time", lambda: initial + 59)
+    assert service.session(token) is not None
+    with app.state.database.connection() as conn:
+        assert conn.execute("SELECT last_seen FROM auth_sessions").fetchone()[0] == initial
+    monkeypatch.setattr(auth_service.time, "time", lambda: initial + 60)
+    assert service.session(token) is not None
+    with app.state.database.connection() as conn:
+        assert conn.execute("SELECT last_seen FROM auth_sessions").fetchone()[0] == initial + 60
+    monkeypatch.setattr(auth_service.time, "time", lambda: initial + 60 + settings.session_idle_seconds)
+    assert service.session(token) is None
+
+
+def test_concurrent_dashboard_reads_do_not_wait_for_financial_writer(raw_client):
+    from concurrent.futures import ThreadPoolExecutor
+
+    login_client(raw_client)
+    with app.state.database.connection() as writer, writer:
+        writer.execute("BEGIN IMMEDIATE")
+        with ThreadPoolExecutor(max_workers=20) as workers:
+            futures = [workers.submit(raw_client.get, "/api/dashboard") for _ in range(50)]
+            for future in futures:
+                assert future.result(timeout=10).status_code == 200
+
+
+def test_due_activity_touch_does_not_wait_for_financial_writer(raw_client, monkeypatch):
+    from app.services import auth_service
+
+    login_client(raw_client)
+    token = raw_client.cookies.get(COOKIE)
+    with app.state.database.connection() as conn:
+        initial = conn.execute("SELECT last_seen FROM auth_sessions").fetchone()[0]
+    monkeypatch.setattr(auth_service.time, "time", lambda: initial + 61)
+    with app.state.database.connection() as writer, writer:
+        writer.execute("BEGIN IMMEDIATE")
+        assert AuthService(app.state.database).session(token) is not None
+    AuthService(app.state.database).logout(token)
+    assert AuthService(app.state.database).session(token) is None
+
+
+def test_hashing_concurrency_has_a_bounded_capacity(raw_client, monkeypatch):
+    from threading import BoundedSemaphore
+
+    from app.services import auth_service
+    from fastapi import HTTPException
+
+    slots = BoundedSemaphore(1)
+    monkeypatch.setattr(auth_service, "HASH_SLOTS", slots)
+    slots.acquire()
+    try:
+        with pytest.raises(HTTPException) as error:
+            AuthService(app.state.database).login("owner", TEST_PASSWORD, None)
+        assert error.value.status_code == 429
+        assert error.value.headers["Retry-After"] == "1"
+    finally:
+        slots.release()
+    token, _ = AuthService(app.state.database).login("owner", TEST_PASSWORD, None)
+    assert AuthService(app.state.database).session(token) is not None

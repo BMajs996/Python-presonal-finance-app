@@ -9,8 +9,16 @@ let active = null;
 let accounts = [];
 let requestId = 0;
 let busy = false;
+let pageCursors = [null];
+let pageIndex = 0;
+
+function resetPages() {
+  pageCursors = [null];
+  pageIndex = 0;
+}
 
 function render(statement) {
+  if (!statement || active?.id !== statement.id) resetPages();
   active = statement;
   $("reconciliation-detail").classList.toggle("hidden", !statement);
   if (!statement) return;
@@ -26,8 +34,10 @@ function render(statement) {
   $("reconciliation-complete").disabled = statement.status !== "draft" || statement.difference_cents !== 0;
   $("reconciliation-complete").classList.toggle("hidden", statement.status !== "draft");
   $("reconciliation-cancel").classList.toggle("hidden", statement.status !== "draft");
-  $("reconciliation-entry-count").textContent = statement.entries.filter(row => row.cleared).length
-    + " / " + statement.entries.length + " cleared";
+  $("reconciliation-entry-count").textContent = statement.cleared_count
+    + " / " + statement.total_entries + " cleared";
+  $("reconciliation-previous").disabled = pageIndex === 0;
+  $("reconciliation-next").disabled = !statement.next_cursor;
   $("reconciliation-entries").innerHTML = statement.entries.map(row => `<tr>
     <td><input type="checkbox" aria-label="Cleared ${escapeHtml(row.description || row.label)}"
       data-kind="${row.kind}" data-id="${row.entry_id}" ${row.cleared ? "checked" : ""}
@@ -96,7 +106,7 @@ async function mutate(action, message) {
   } catch (error) {
     // Restore checked state after rejected writes; server state stays authoritative.
     if (active) {
-      try { render(await getStatement(active.id)); } catch { render(null); }
+      try { render(await getStatement(active.id, pageCursors[pageIndex])); } catch { render(null); }
     }
     reportError(error);
   } finally {
@@ -108,6 +118,30 @@ async function mutate(action, message) {
 }
 
 export function initReconciliationView() {
+  for (const [id, step] of [["reconciliation-previous", -1], ["reconciliation-next", 1]]) {
+    $(id).addEventListener("click", async () => {
+      if (busy || !active) return;
+      const nextIndex = pageIndex + step;
+      const cursor = step > 0 ? active.next_cursor : pageCursors[nextIndex];
+      if (nextIndex < 0 || (step > 0 && !cursor)) return;
+      busy = true;
+      const token = ++requestId;
+      $("reconciliation-body").inert = true;
+      $("reconciliation-account").disabled = true;
+      try {
+        const statement = await getStatement(active.id, cursor);
+        if (token !== requestId) return;
+        pageIndex = nextIndex;
+        pageCursors[pageIndex] = cursor;
+        render(statement);
+      } catch (error) { reportError(error); }
+      finally {
+        busy = false;
+        $("reconciliation-body").inert = false;
+        $("reconciliation-account").disabled = false;
+      }
+    });
+  }
   $("reconciliation-date").value = todayIso();
   $("reconciliation-date").max = todayIso();
   $("reconciliation-account").addEventListener("change", () => loadReconciliation().catch(reportError));
@@ -123,9 +157,12 @@ export function initReconciliationView() {
     const input = event.target.closest("input[data-id]");
     if (!input || !active) return;
     const ident = active.id;
-    mutate(() => clearEntry(ident, {
-      kind: input.dataset.kind, entry_id: Number(input.dataset.id), cleared: input.checked,
-    }));
+    const change = { kind: input.dataset.kind, entry_id: Number(input.dataset.id), cleared: input.checked };
+    mutate(async () => {
+      const totals = await clearEntry(ident, change);
+      return { ...active, ...totals, entries: active.entries.map(row =>
+        row.kind === change.kind && row.entry_id === change.entry_id ? { ...row, cleared: change.cleared } : row) };
+    });
   });
   $("reconciliation-history").addEventListener("click", async event => {
     const button = event.target.closest("[data-statement]");
@@ -133,13 +170,17 @@ export function initReconciliationView() {
     const token = ++requestId;
     try {
       const statement = await getStatement(Number(button.dataset.statement));
-      if (token === requestId) render(statement);
+      if (token === requestId) { resetPages(); render(statement); }
     } catch (error) { if (token === requestId) reportError(error); }
   });
   $("reconciliation-complete").addEventListener("click", () => {
     if (!active || !confirm("Complete this statement? Cleared entries will be locked.")) return;
     const ident = active.id;
-    mutate(() => completeStatement(ident), "Statement completed");
+    mutate(async () => {
+      const statement = await completeStatement(ident);
+      resetPages();
+      return statement;
+    }, "Statement completed");
   });
   $("reconciliation-cancel").addEventListener("click", () => {
     if (!active || !confirm("Discard this draft and its cleared selections?")) return;

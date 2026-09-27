@@ -278,3 +278,6 @@ label input, label select { margin-top: 6px; }
 .login-error { color: var(--danger); min-height: 24px; overflow-wrap: anywhere; margin: 0; }
 .login-main button { min-height: 44px; border-radius: 6px; }
 .topbar { flex-wrap: wrap; gap: 12px; }
+
+.reconciliation-pagination { align-items: center; flex-wrap: wrap; }
+.reconciliation-pagination p { margin-right: auto; }

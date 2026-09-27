@@ -1,8 +1,11 @@
 from datetime import date
 from decimal import Decimal
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
+
+from .domain.money import MAX_AMOUNT
 
 TransactionType = Literal["income", "expense"]
 Frequency = Literal["daily", "weekly", "monthly", "yearly"]
@@ -13,7 +16,7 @@ class TransactionCreate(BaseModel):
     date: date
     type: TransactionType
     category: str = Field(min_length=1, max_length=100)
-    amount: Decimal = Field(gt=0, decimal_places=2)
+    amount: Decimal = Field(gt=0, le=MAX_AMOUNT, decimal_places=2)
     description: str = Field(default="", max_length=500)
     account_id: int | None = Field(default=None, gt=0)
 
@@ -33,10 +36,10 @@ class TransactionUpdate(TransactionCreate):
 class RecurringCreate(BaseModel):
     type: TransactionType
     category: str = Field(min_length=1, max_length=100)
-    amount: Decimal = Field(gt=0, decimal_places=2)
+    amount: Decimal = Field(gt=0, le=MAX_AMOUNT, decimal_places=2)
     description: str = Field(default="", max_length=500)
     frequency: Frequency
-    start_date: date
+    start_date: date = Field(ge=date(1900, 1, 1), le=date(9998, 12, 31))
     account_id: int | None = Field(default=None, gt=0)
 
     @field_validator("category")
@@ -51,10 +54,10 @@ class RecurringCreate(BaseModel):
 class RecurringUpdate(BaseModel):
     type: TransactionType
     category: str = Field(min_length=1, max_length=100)
-    amount: Decimal = Field(gt=0, decimal_places=2)
+    amount: Decimal = Field(gt=0, le=MAX_AMOUNT, decimal_places=2)
     description: str = Field(default="", max_length=500)
     frequency: Frequency
-    next_date: date
+    next_date: date = Field(ge=date(1900, 1, 1), le=date(9998, 12, 31))
     account_id: int | None = Field(default=None, gt=0)
 
     @field_validator("category")
@@ -68,7 +71,7 @@ class RecurringUpdate(BaseModel):
 
 class BudgetCreate(BaseModel):
     category: str = Field(min_length=1, max_length=100)
-    monthly_limit: Decimal = Field(gt=0, decimal_places=2)
+    monthly_limit: Decimal = Field(gt=0, le=MAX_AMOUNT, decimal_places=2)
 
 
 class BudgetUpdate(BudgetCreate):
@@ -79,7 +82,7 @@ class AccountCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     type: AccountType = "checking"
     currency: str = Field(default="USD", min_length=3, max_length=3)
-    opening_balance: Decimal = Field(default=Decimal("0"), decimal_places=2)
+    opening_balance: Decimal = Field(default=Decimal("0"), ge=-MAX_AMOUNT, le=MAX_AMOUNT, decimal_places=2)
 
     @field_validator("name")
     @classmethod
@@ -102,7 +105,7 @@ class TransferCreate(BaseModel):
     date: date
     from_account_id: int = Field(gt=0)
     to_account_id: int = Field(gt=0)
-    amount: Decimal = Field(gt=0, decimal_places=2)
+    amount: Decimal = Field(gt=0, le=MAX_AMOUNT, decimal_places=2)
     description: str = Field(default="", max_length=500)
 
 
@@ -278,3 +281,25 @@ class TransactionAuditResponse(BaseModel):
 class TransactionAuditPage(BaseModel):
     items: list[TransactionAuditResponse]
     total: int
+
+
+class CsvRows(BaseModel):
+    rows: list[TransactionCreate] = Field(min_length=1, max_length=1000)
+
+
+class CsvImport(CsvRows):
+    batch_id: UUID
+
+
+class CsvPreviewRow(BaseModel):
+    status: Literal["valid", "invalid", "duplicate"]
+    error: str
+
+
+class CsvPreview(BaseModel):
+    rows: list[CsvPreviewRow]
+
+
+class CsvResult(BaseModel):
+    imported: int
+    duplicates: int

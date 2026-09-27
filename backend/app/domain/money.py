@@ -1,7 +1,13 @@
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
+from decimal import InvalidOperation as DecimalError
+
+from .errors import InvalidOperation
 
 CENT = Decimal("0.01")
+MAX_AMOUNT = Decimal("1000000000.00")
+MAX_AMOUNT_CENTS = 100_000_000_000
+MAX_STATEMENT_BALANCE = Decimal("90000000000000.00")
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,8 +22,14 @@ class Money:
         object.__setattr__(self, "currency", normalized)
 
     @classmethod
-    def from_amount(cls, amount, currency: str = "USD") -> "Money":
-        decimal_amount = Decimal(str(amount)).quantize(CENT, rounding=ROUND_HALF_UP)
+    def from_amount(cls, amount, currency: str = "USD", *, maximum: Decimal = MAX_AMOUNT) -> "Money":
+        try:
+            decimal_amount = Decimal(str(amount))
+            if not decimal_amount.is_finite() or abs(decimal_amount) > maximum:
+                raise InvalidOperation("Amount exceeds the supported monetary range")
+            decimal_amount = decimal_amount.quantize(CENT, rounding=ROUND_HALF_UP)
+        except DecimalError as exc:
+            raise InvalidOperation("Invalid monetary amount") from exc
         return cls(int(decimal_amount * 100), currency)
 
     @property

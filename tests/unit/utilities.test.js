@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { execFileSync } from "node:child_process";
-import { csvValue, parseCsv } from "../../frontend/utils/csv.js";
-import { escapeHtml, escapeAttr } from "../../frontend/utils/escape.js";
+import { csvValue, csvText, parseCsv } from "../../frontend/utils/csv.js";
+import { escapeHtml, escapeAttr, transactionClass } from "../../frontend/utils/escape.js";
 import { money, compactMoney, setBaseCurrency } from "../../frontend/utils/money.js";
 import { isIsoDate, validateDateRange } from "../../frontend/utils/dates.js";
 
@@ -62,3 +62,30 @@ for (const zone of ["Europe/Belgrade", "America/Los_Angeles", "Pacific/Kiritimat
     `], { env: { ...process.env, TZ: zone } });
   });
 }
+
+
+test("CSV text export neutralizes spreadsheet formulas without changing numeric cells", () => {
+  for (const value of ["=1+1", "+SUM(A1)", "-1+1", "@SUM(A1)", "  =1", "\t=1", "\r\n=1"]) {
+    assert.deepEqual(parseCsv(csvText(value)), [["'" + value]]);
+  }
+  assert.deepEqual(parseCsv(csvText('=HYPERLINK("https://example.com","x")')), [[
+    '\'=HYPERLINK("https://example.com","x")'
+  ]]);
+  assert.equal(csvText("Ordinary text"), "Ordinary text");
+  assert.equal(csvValue(-12.34), "-12.34");
+  assert.equal(csvValue(12.34), "12.34");
+});
+
+test("CSV parsing bounds rows and rejects incomplete quoted fields", () => {
+  assert.deepEqual(parseCsv("header\nrow", 2), [["header"], ["row"]]);
+  assert.throws(() => parseCsv("header\nrow\nextra", 2), /limit/);
+  assert.throws(() => parseCsv("header\nrow\nextra\n", 2), /limit/);
+  assert.throws(() => parseCsv('header\n"unfinished'), /unterminated/);
+});
+
+test("transaction CSS classes use an allowlist", () => {
+  assert.equal(transactionClass("income"), "income");
+  assert.equal(transactionClass("expense"), "expense");
+  assert.equal(transactionClass('income" onclick="alert(1)'), "");
+  assert.equal(transactionClass(null), "");
+});

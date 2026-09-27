@@ -1,4 +1,4 @@
-import { escapeHtml } from "../utils/escape.js";
+import { escapeHtml, transactionClass } from "../utils/escape.js";
 import { money } from "../utils/money.js";
 
 export function renderAccounts(accounts, target) {
@@ -20,9 +20,9 @@ export function renderRecentTransactions(items, target) {
       <div class="transaction-row">
         <div class="transaction-main">
           <strong>${escapeHtml(transaction.category)}</strong>
-          <small>${escapeHtml(transaction.description || "No description")} · ${escapeHtml(transaction.account_name || "Main Account")} · ${transaction.date}</small>
+          <small>${escapeHtml(transaction.description || "No description")} · ${escapeHtml(transaction.account_name || "Main Account")} · ${escapeHtml(transaction.date)}</small>
         </div>
-        <div class="transaction-amount ${transaction.type}">${transaction.type === "income" ? "+" : "-"}${money(transaction.amount, transaction.currency)}</div>
+        <div class="transaction-amount ${transactionClass(transaction.type)}">${transaction.type === "income" ? "+" : "-"}${money(transaction.amount, transaction.currency)}</div>
       </div>`).join("")
     : "<p>No transactions yet.</p>";
 }

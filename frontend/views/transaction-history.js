@@ -2,7 +2,7 @@ import { listDeletedTransactions, restoreTransaction, transactionHistory } from 
 import { openModal, closeModal } from "../components/modal.js";
 import { reportError, toast } from "../components/toast.js";
 import { $ } from "../utils/dom.js";
-import { escapeHtml } from "../utils/escape.js";
+import { escapeHtml, transactionClass } from "../utils/escape.js";
 import { money } from "../utils/money.js";
 
 let deletedOffset = 0;
@@ -37,7 +37,7 @@ async function loadDeleted() {
   $("deleted-table").innerHTML = data.items.length ? data.items.map(row => `<tr>
     <td>${escapeHtml(row.date)}</td>
     <td>${escapeHtml(row.description || row.category)}<br><small>${escapeHtml(row.account_name)}</small></td>
-    <td class="amount ${row.type}">${row.type === "income" ? "+" : "-"}${money(row.amount, row.currency)}</td>
+    <td class="amount ${transactionClass(row.type)}">${row.type === "income" ? "+" : "-"}${money(row.amount, row.currency)}</td>
     <td><div class="row-actions">
       <button class="ghost" data-history="${row.id}">History</button>
       <button class="ghost" data-restore="${row.id}">Restore</button>

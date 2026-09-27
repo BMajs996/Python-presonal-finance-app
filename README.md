@@ -497,10 +497,20 @@ Without an owner hash, local startup is allowed but financial access remains loc
 Sessions use random opaque HttpOnly, SameSite=Strict cookies. Only token hashes are stored in
 the database, with an eight-hour absolute lifetime and 30-minute idle timeout by default.
 Sign-out revokes the server-side session. Sessions and the login attempt counter are shared
-across workers in two additive operational tables, independent of financial schema versions.
-Ten login attempts per minute are permitted globally for this single owner, including successful
-attempts. This protects password verification across IP addresses but can temporarily lock out
-the owner during an attack; add edge rate limiting before public deployment.
+across workers in three additive operational tables, independent of financial schema versions.
+Each client address is limited to ten login attempts per minute, with a global ceiling of 100;
+successful attempts also count. At most two password hashes run concurrently per app worker;
+excess concurrent attempts receive a short 429 response. Retry-After reports the remaining
+window for rate limits. Forwarded address
+headers are not read directly by the application: only a correctly configured trusted proxy
+may supply the client address. Distributed attacks can still reach the global ceiling;
+add edge rate limiting before public deployment.
+
+Session checks normally read without a write transaction. Activity timestamps update at most
+once per minute (or one quarter of a shorter configured idle timeout). Idle expiry can therefore
+occur up to that interval before the last request. A busy database can defer activity updates
+further: these best-effort writes never extend absolute expiry or recreate a revoked session.
+PostgreSQL authentication writes use a separate advisory lock from financial writes.
 
 Write requests require both an exact allowed Origin and a session-bound `X-CSRF-Token`.
 Login requires an allowed Origin but no existing session. `GET /api/auth/session` returns the
@@ -523,7 +533,9 @@ CORS_ORIGINS=https://finance.example.com
 OWNER_USERNAME=owner
 ```
 
-Production startup requires an owner hash and HTTPS-only origins, and enables Secure cookies.
+Production startup requires an owner hash and HTTPS-only origins, enables Secure cookies,
+and rejects requests whose trusted ASGI scheme is not HTTPS. This rejection cannot protect
+credentials already sent over plaintext; TLS must terminate at the public edge.
 Serve the UI and API from the same origin over HTTPS through a trusted reverse proxy.
 Cross-site frontend hosting is not supported by the Strict session cookie.
 Keep PostgreSQL private and do not use development reload in production.
@@ -536,3 +548,62 @@ Keep the owner hash configured separately; it is not part of a database backup.
 
 The security design follows [OWASP session management guidance](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
 and [password storage guidance](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html).
+
+
+## Pre-launch hardening
+
+The review fixes are developed on `feature/prelaunch-hardening`. Deployment is not yet approved:
+the external checks below still require a real hosting target.
+
+### Data handling
+
+- Transactions, recurring amounts, transfers and budget limits are at most 1,000,000,000.00
+  in the base currency. Opening balances allow the same positive/negative range.
+  NaN, infinity and excessive magnitudes are rejected before cent conversion.
+  Computed totals are not restricted by this per-entry limit. Statement balances retain
+  their separate +/-90,000,000,000,000.00 limit because they represent aggregates.
+- Recurring processing commits at most 100 occurrences per schedule per pass, then visits
+  the next schedule. Remaining backlog is processed on later scheduled/manual passes.
+  Occurrence uniqueness and atomic per-schedule batches prevent duplicate or partial batches.
+  Recurring start/next dates must be between 1900-01-01 and 9998-12-31.
+- Reconciliation detail returns 100 entries by default, at most 200 with `limit`.
+  Pass the returned `next_cursor` unchanged as `cursor` for the next page. Totals cover
+  the entire statement, not just its displayed page. Clear mutations return summary/totals,
+  not ledger rows. The frontend preserves the current page and provides Previous/Next.
+- CSV files are limited to 2 MiB and 1,000 transactions before preview. Server preview and
+  import endpoints also cap batches at 1,000 rows. Preview checks only candidate duplicates,
+  not the complete transaction history. Keys include date, type, exact cents, category,
+  description and account. Text comparisons trim and lowercase; likely duplicates are skipped.
+- `POST /api/transactions/import/preview` accepts `{"rows": [...]}`.
+  `POST /api/transactions/import` accepts `{"batch_id": "<uuid>", "rows": [...]}`.
+  A batch commits financial rows, audit events and its retry receipt atomically. Retrying
+  the same ID and payload returns its original result; changing the payload for a used ID
+  returns 409. Receipts use namespaced `csv-import:` keys in the existing settings table,
+  persist in backups/migrations, and should not be manually deleted while retries are possible.
+  A validation/write failure leaves no partial import. The preview remains available to retry.
+- Browser CSV exports are bounded to 10,000 rows; narrow filters for larger histories.
+  Exported text beginning with optional whitespace followed by `=`, `+`, `-` or `@`
+  is prefixed with an apostrophe; numeric amount/ID columns stay numeric.
+  This changes export text only, not database values. Reimport preserves the protective apostrophe.
+  Verify behavior in your target spreadsheet; editing/re-saving can remove spreadsheet protections.
+- Legacy date/type text is escaped when rendered and transaction CSS classes are allowlisted.
+  A same-origin Content-Security-Policy is currently **report-only**, not an enforcement claim.
+  Review browser policy violations on staging before switching to enforcement.
+- Monthly report predicates compare ISO dates directly rather than wrapping indexed date
+  columns in `substr`. Grouping still uses month labels; report totals sum integer cents.
+
+### Deployment gates still open
+
+1. Terminate TLS at a trusted reverse proxy, redirect public HTTP to HTTPS, and bind the app
+   to loopback/private networking. Block public access to the backend and PostgreSQL ports.
+2. Trust forwarded headers only from that proxy's exact addresses, never a wildcard.
+   Verify real client-address throttling and HTTPS scheme propagation through the actual proxy.
+3. Verify TLS and redirects externally, then enable HSTS at the edge with an appropriate
+   rollout policy. Do not enable includeSubDomains/preload without reviewing every subdomain.
+4. Collect CSP violations during staging and enforce the tested policy. Review any legacy
+   malformed dates/types before introducing stricter database guards.
+5. Run a backup/restore drill and compare balances, reports, history and reconciliations
+   on an isolated restored database. Rotate owner credentials before exposing a restored app.
+6. Measure connection counts and query plans on deployment-sized data. PostgreSQL still uses
+   per-operation connections; a bounded pool remains a capacity improvement to evaluate.
+   Statement history itself remains unpaginated; ledger entry pages are bounded.
