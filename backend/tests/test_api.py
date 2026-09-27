@@ -131,7 +131,7 @@ def test_openapi_declares_every_json_success_and_domain_error(client):
             for code, response in operation["responses"].items():
                 if code.startswith("2") and code != "204":
                     assert response["content"]["application/json"]["schema"], path
-            if path != "/api/health":
+            if path != "/api/health" and not path.startswith("/api/auth/"):
                 for code in ("400", "404", "409"):
                     assert operation["responses"][code]["content"]["application/json"]["schema"] == {
                         "$ref": "#/components/schemas/ErrorResponse"
@@ -158,7 +158,10 @@ def client(tmp_path, monkeypatch):
 
     monkeypatch.setattr(settings, "database_path", tmp_path / "api-test.db")
 
+    from .conftest import login_client
+
     with TestClient(app) as test_client:
+        login_client(test_client)
         yield test_client
 
 

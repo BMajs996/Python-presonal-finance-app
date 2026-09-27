@@ -21,6 +21,7 @@ From the repository root:
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r backend/requirements.txt
+python -m backend.app.setup_owner
 python run.py
 ```
 
@@ -472,3 +473,66 @@ PostgreSQL tests require a database name ending in `_test`; each uses its own te
 They never truncate the database or use the live application URL. Without `TEST_DATABASE_URL`,
 PostgreSQL backend tests are skipped. Browser tests default to temporary SQLite databases.
 CI supplies PostgreSQL 18 and exercises both backends.
+
+
+## Single-owner access
+
+All financial API routes and API documentation require an owner session. There is no registration,
+anonymous mode, or multi-user sharing. Existing financial records belong to this one owner.
+
+From the repository root, set or reset the password using hidden terminal prompts:
+
+```bash
+source .venv/bin/activate
+python -m backend.app.setup_owner
+python run.py
+```
+
+The default username is `owner`; override it with `OWNER_USERNAME`. Passwords must be 15-1024
+characters. Only an Argon2id hash is written to the private `.env`, preserving other settings.
+Restart every app worker after changing credentials. Changing the username or password hash
+invalidates existing sessions. There is no web password-reset endpoint; server access is required.
+Without an owner hash, local startup is allowed but financial access remains locked.
+
+Sessions use random opaque HttpOnly, SameSite=Strict cookies. Only token hashes are stored in
+the database, with an eight-hour absolute lifetime and 30-minute idle timeout by default.
+Sign-out revokes the server-side session. Sessions and the login attempt counter are shared
+across workers in two additive operational tables, independent of financial schema versions.
+Ten login attempts per minute are permitted globally for this single owner, including successful
+attempts. This protects password verification across IP addresses but can temporarily lock out
+the owner during an attack; add edge rate limiting before public deployment.
+
+Write requests require both an exact allowed Origin and a session-bound `X-CSRF-Token`.
+Login requires an allowed Origin but no existing session. `GET /api/auth/session` returns the
+CSRF token to authenticated clients; the frontend keeps it in memory, not local storage.
+Authentication responses and private pages/API responses are marked no-store.
+
+### Origins and production
+
+Development defaults permit only `http://127.0.0.1:8000` and `http://localhost:8000`.
+Changing the port requires updating `CORS_ORIGINS`. Use comma-separated origins without paths
+or trailing slashes; wildcards, null origins and embedded credentials are rejected.
+CORS permits credentials, GET/POST/PUT/DELETE, Content-Type and X-CSRF-Token.
+CORS is a browser policy, not a replacement for authentication or CSRF validation.
+
+Before public deployment, configure:
+
+```dotenv
+ENVIRONMENT=production
+CORS_ORIGINS=https://finance.example.com
+OWNER_USERNAME=owner
+```
+
+Production startup requires an owner hash and HTTPS-only origins, and enables Secure cookies.
+Serve the UI and API from the same origin over HTTPS through a trusted reverse proxy.
+Cross-site frontend hosting is not supported by the Strict session cookie.
+Keep PostgreSQL private and do not use development reload in production.
+
+Database dumps can contain session records. When restoring, rotate the owner password before
+exposing the restored app so previously issued sessions cannot become valid again.
+SQLite-to-PostgreSQL migration intentionally omits these operational auth tables: financial data
+is verified as before, while sessions and login counters start fresh on the destination.
+Keep the owner hash configured separately; it is not part of a database backup.
+
+The security design follows [OWASP session management guidance](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
+and [password storage guidance](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html).

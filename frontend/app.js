@@ -1,3 +1,4 @@
+import { request, setCSRFToken } from "./api/client.js";
 import { reportError } from "./components/toast.js";
 import { $ } from "./utils/dom.js";
 import { initAccountsView, loadAccounts } from "./views/accounts.js";
@@ -65,4 +66,16 @@ initReportsView();
 initAccountsView({ refresh });
 initTransfersView({ refresh });
 
-refresh().catch(reportError);
+async function start() {
+  const session = await request("/api/auth/session");
+  setCSRFToken(session.csrf_token);
+  $("logout-btn").addEventListener("click", async () => {
+    try {
+      await request("/api/auth/logout", { method: "POST" });
+      window.location.replace("/login");
+    } catch (error) { reportError(error); }
+  });
+  await refresh();
+}
+window.addEventListener("pageshow", (event) => { if (event.persisted) window.location.reload(); });
+start().catch(reportError);

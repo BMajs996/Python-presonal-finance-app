@@ -83,7 +83,10 @@ def test_service_parity(pg_repo, case):
 )
 def test_api_parity(pg_url, monkeypatch, case):
     monkeypatch.setattr(settings, "database_url", SecretStr(pg_url))
+    from .conftest import login_client
+
     with TestClient(app) as client:
+        login_client(client)
         case(client)
 
 
@@ -277,3 +280,21 @@ def test_transfer_rejects_future_schema(pg_url, db):
         transfer_sqlite(Path(db.database.db_path), pg_url, "USD")
     with psycopg.connect(pg_url) as connection:
         assert connection.execute("SELECT to_regclass('accounts')").fetchone()[0] is None
+
+
+def test_transfer_discards_operational_sessions(pg_url, db):
+    from app.services.auth_service import AuthService, initialize_auth
+
+    from .conftest import TEST_PASSWORD
+
+    initialize_auth(db.database)
+    AuthService(db.database).login("owner", TEST_PASSWORD, None)
+    result = transfer_sqlite(Path(db.database.db_path), pg_url, "USD", commit=True)
+    assert "auth_sessions" not in result["counts"]
+    postgres = PostgresDatabase(pg_url)
+    try:
+        initialize_auth(postgres)
+        with postgres.connection() as connection:
+            assert connection.execute("SELECT COUNT(*) FROM auth_sessions").fetchone()[0] == 0
+    finally:
+        postgres.close()
