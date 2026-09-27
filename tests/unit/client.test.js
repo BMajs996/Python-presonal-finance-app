@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { request } from "../../frontend/api/client.js";
+import { request, setCSRFToken } from "../../frontend/api/client.js";
 
 test("API client returns JSON and handles empty deletion responses", async (t) => {
   t.mock.method(globalThis, "fetch", async () => Response.json({ items: [], total: 0 }));
@@ -20,4 +20,18 @@ test("API client reports domain, validation, non-JSON and network errors", async
   }
   t.mock.method(globalThis, "fetch", async () => { throw new TypeError("Network offline"); });
   await assert.rejects(request("/api/accounts"), /Network offline/);
+});
+
+
+test("API client sends CSRF and same-origin credentials without losing headers", async (t) => {
+  setCSRFToken("synthetic-csrf-token");
+  t.after(() => setCSRFToken(null));
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    assert.equal(options.credentials, "same-origin");
+    assert.equal(options.headers["X-CSRF-Token"], "synthetic-csrf-token");
+    assert.equal(options.headers["Content-Type"], "application/json");
+    assert.equal(options.headers["X-Test"], "preserved");
+    return new Response(null, { status: 204 });
+  });
+  await request("/api/auth/logout", { method: "POST", headers: { "X-Test": "preserved" } });
 });

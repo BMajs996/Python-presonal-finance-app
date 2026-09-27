@@ -14,6 +14,7 @@ from ..database import FinanceDatabase
 from ..migrations import LATEST_SCHEMA_VERSION
 from ..postgres_connection import WRITE_LOCK, record_factory
 from ..postgres_database import TABLES, create_schema, install_guards
+from .auth_service import AUTH_TABLES
 from .backup_service import BackupService
 
 
@@ -56,7 +57,7 @@ def _transfer_locked(source_path: Path, target_url: str, currency: str, *, commi
                     "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
                 )
             }
-            if names != set(TABLES):
+            if names - AUTH_TABLES != set(TABLES):
                 raise ValueError("SQLite source has unsupported tables; nothing was copied")
             main = source.conn.execute("SELECT currency FROM accounts WHERE name='Main Account'").fetchone()
             if main is None or main[0] != currency:

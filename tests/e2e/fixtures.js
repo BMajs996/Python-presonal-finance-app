@@ -39,6 +39,12 @@ export const test = base.extend({
       const url = route.request().url();
       return url.startsWith(appURL) || url.startsWith("blob:") ? route.continue() : route.abort();
     });
+    const login = await page.request.post(appURL + "/api/auth/login", {
+      headers: { Origin: appURL }, data: { username: "owner", password: "synthetic-owner-password" },
+    });
+    expect(login.status()).toBe(200);
+    const session = await login.json();
+    await page.context().setExtraHTTPHeaders({ Origin: appURL, "X-CSRF-Token": session.csrf_token });
     await page.goto(appURL);
     await expect(page.locator("#account-list")).toContainText("Main Account");
     await use(page);
