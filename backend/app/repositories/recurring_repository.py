@@ -1,3 +1,4 @@
+import logging
 from datetime import date
 
 from ..domain.money import Money
@@ -5,6 +6,7 @@ from ..domain.recurrence import calculate_next_date
 from .base_repository import BaseRepository
 
 BATCH_SIZE = 100
+logger = logging.getLogger(__name__)
 
 
 class RecurringRepository(BaseRepository):
@@ -34,10 +36,11 @@ class RecurringRepository(BaseRepository):
         return self._serialize(row) if row else None
 
     def add(self, payload):
-        account_id = self.resolve_account_id(payload.account_id)
-        amount = Money.from_amount(payload.amount, self.account_currency(account_id))
         next_date = calculate_next_date(payload.frequency, payload.start_date)
         with self.conn:
+            self.conn.execute("BEGIN IMMEDIATE")
+            account_id = self.resolve_account_id(payload.account_id)
+            amount = Money.from_amount(payload.amount, self.account_currency(account_id))
             cursor = self.conn.execute(
                 """
                 INSERT INTO recurring_transactions
@@ -60,14 +63,15 @@ class RecurringRepository(BaseRepository):
         return self.get(recurring_id)
 
     def update(self, recurring_id: int, payload):
-        if not self.conn.execute(
-            "SELECT id FROM recurring_transactions WHERE id=? AND active=1",
-            (recurring_id,),
-        ).fetchone():
-            return None
-        account_id = self.resolve_account_id(payload.account_id)
-        amount = Money.from_amount(payload.amount, self.account_currency(account_id))
         with self.conn:
+            self.conn.execute("BEGIN IMMEDIATE")
+            if not self.conn.execute(
+                "SELECT id FROM recurring_transactions WHERE id=? AND active=1",
+                (recurring_id,),
+            ).fetchone():
+                return None
+            account_id = self.resolve_account_id(payload.account_id)
+            amount = Money.from_amount(payload.amount, self.account_currency(account_id))
             self.conn.execute(
                 """
                 UPDATE recurring_transactions
@@ -110,10 +114,20 @@ class RecurringRepository(BaseRepository):
                 # Re-read under the writer lock; another worker may already have advanced it.
                 self.conn.execute("BEGIN IMMEDIATE")
                 row = self.conn.execute(
-                    "SELECT * FROM recurring_transactions WHERE id=? AND active=1 AND next_date<=?",
+                    """SELECT r.*, a.active AS account_active
+                    FROM recurring_transactions r LEFT JOIN accounts a ON a.id=r.account_id
+                    WHERE r.id=? AND r.active=1 AND r.next_date<=?""",
                     (schedule["id"], through.isoformat()),
                 ).fetchone()
                 if row is None:
+                    continue
+                if row["account_active"] != 1:
+                    self.conn.execute("UPDATE recurring_transactions SET active=0 WHERE id=?", (row["id"],))
+                    logger.warning(
+                        "Pausing recurring schedule id=%s: account inactive or missing; "
+                        "owner review required",
+                        row["id"],
+                    )
                     continue
                 occurrence = date.fromisoformat(row["next_date"])
                 guard = 0
@@ -138,7 +152,7 @@ class RecurringRepository(BaseRepository):
                             row["amount"],
                             row["amount_cents"],
                             f"{row['description']} (Auto)".strip(),
-                            row["account_id"] or self.default_account_id(),
+                            row["account_id"],
                             claim.rowcount == 1,
                         ),
                     )

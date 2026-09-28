@@ -1,5 +1,4 @@
-from datetime import date, timedelta
-
+from ..domain.date_range import DateRange
 from .base_repository import BaseRepository
 
 
@@ -23,8 +22,7 @@ class BalanceRepository(BaseRepository):
         ).fetchone()
         return int(row["balance_cents"] or 0)
 
-    def daily_history_cents(self, days: int):
-        start = date.today() - timedelta(days=max(1, days))
+    def daily_history_cents(self, period: DateRange):
         opening = self.conn.execute(
             """
             SELECT COALESCE((
@@ -39,7 +37,7 @@ class BalanceRepository(BaseRepository):
                        WHERE t.deleted_at IS NULL AND t.date < ? AND a.currency=?
                    ), 0) AS balance_cents
             """,
-            (self.base_currency, start.isoformat(), self.base_currency),
+            (self.base_currency, period.start_iso, self.base_currency),
         ).fetchone()["balance_cents"]
         daily = self.conn.execute(
             """
@@ -48,11 +46,11 @@ class BalanceRepository(BaseRepository):
                             THEN t.amount_cents ELSE -t.amount_cents END) change_cents
             FROM transactions t
             JOIN accounts a ON a.id=t.account_id
-            WHERE t.deleted_at IS NULL AND t.date >= ? AND a.currency=?
+            WHERE t.deleted_at IS NULL AND t.date BETWEEN ? AND ? AND a.currency=?
             GROUP BY t.date
             ORDER BY t.date
             """,
-            (start.isoformat(), self.base_currency),
+            (period.start_iso, period.end_iso, self.base_currency),
         ).fetchall()
         return int(opening or 0), [dict(row) for row in daily]
 
