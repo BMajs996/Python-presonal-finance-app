@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 
+from ..domain.date_range import DateRange
 from ..domain.money import Money
 from ..domain.recurrence import add_months
 from .account_repository import AccountRepository
@@ -15,14 +16,12 @@ class ReportRepository(BaseRepository):
         self.budgets = BudgetRepository(connection, base_currency)
         self.transactions = TransactionRepository(connection, base_currency)
 
-    def dashboard_data(self, days: int = 30):
-        today = date.today()
-        period_start = today - timedelta(days=days - 1)
-        previous_end = period_start - timedelta(days=1)
-        previous_start = previous_end - timedelta(days=days - 1)
-
-        summary = self._period_summary(period_start, today)
-        previous = self._period_summary(previous_start, previous_end)
+    def dashboard_data(self, period: DateRange):
+        days = period.days
+        assert period.start is not None
+        previous_period = DateRange.trailing(days, end=period.start - timedelta(days=1))
+        summary = self._period_summary(period)
+        previous = self._period_summary(previous_period)
 
         expenses = [
             {
@@ -39,7 +38,7 @@ class ReportRepository(BaseRepository):
                 GROUP BY t.category
                 ORDER BY total_cents DESC
                 """,
-                (self.base_currency, period_start.isoformat(), today.isoformat()),
+                (self.base_currency, period.start_iso, period.end_iso),
             )
         ]
         recent, _ = self.transactions.list(limit=8)
@@ -50,8 +49,8 @@ class ReportRepository(BaseRepository):
             "currency": self.base_currency,
             "period": {
                 "days": days,
-                "start": period_start.isoformat(),
-                "end": today.isoformat(),
+                "start": period.start_iso,
+                "end": period.end_iso,
             },
             "income": income.as_float(),
             "expenses": expenses_total.as_float(),
@@ -71,7 +70,7 @@ class ReportRepository(BaseRepository):
             "accounts": self.accounts.list(),
         }
 
-    def _period_summary(self, start: date, end: date) -> dict[str, int]:
+    def _period_summary(self, period: DateRange) -> dict[str, int]:
         summary = {"income": 0, "expense": 0}
         for row in self.conn.execute(
             """
@@ -81,7 +80,7 @@ class ReportRepository(BaseRepository):
             WHERE t.deleted_at IS NULL AND a.currency=? AND t.date BETWEEN ? AND ?
             GROUP BY t.type
             """,
-            (self.base_currency, start.isoformat(), end.isoformat()),
+            (self.base_currency, period.start_iso, period.end_iso),
         ):
             summary[row["type"]] = int(row["total_cents"] or 0)
         return summary

@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from ..domain.account import Account
-from ..domain.errors import InvalidOperation
+from ..domain.errors import Conflict, InvalidOperation
 from ..domain.money import Money
 from .base_repository import BaseRepository
 
@@ -67,9 +67,15 @@ class AccountRepository(BaseRepository):
         return self.get(account_id)
 
     def deactivate(self, account_id: int):
-        if account_id == self.default_account_id():
-            raise InvalidOperation("Main Account cannot be deactivated")
         with self.conn:
+            self.conn.execute("BEGIN IMMEDIATE")
+            if account_id == self.default_account_id():
+                raise InvalidOperation("Main Account cannot be deactivated")
+            if self.conn.execute(
+                "SELECT 1 FROM recurring_transactions WHERE account_id=? AND active=1 LIMIT 1",
+                (account_id,),
+            ).fetchone():
+                raise Conflict("Pause or move active recurring schedules before deactivating this account")
             self.conn.execute("UPDATE accounts SET active=0 WHERE id=?", (account_id,))
 
     @staticmethod

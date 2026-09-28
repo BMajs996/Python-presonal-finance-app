@@ -1,3 +1,6 @@
+from datetime import timedelta
+
+from ..domain.date_range import DateRange
 from ..domain.money import Money
 
 
@@ -9,17 +12,16 @@ class BalanceService:
     def total(self) -> float:
         return Money(self.repository.total_cents(), self.currency).as_float()
 
-    def daily_history(self, days: int):
-        running, changes = self.repository.daily_history_cents(days)
+    def daily_history(self, period: DateRange):
+        days = period.days
+        assert period.start is not None
+        running, changes = self.repository.daily_history_cents(period)
+        changes_by_date = {row["date"]: int(row["change_cents"] or 0) for row in changes}
         history = []
-        for row in changes:
-            running += int(row["change_cents"] or 0)
-            history.append(
-                {
-                    "date": row["date"],
-                    "balance": Money(running, self.currency).as_float(),
-                }
-            )
+        for offset in range(days):
+            label = (period.start + timedelta(days=offset)).isoformat()
+            running += changes_by_date.get(label, 0)
+            history.append({"date": label, "balance": Money(running, self.currency).as_float()})
         return history
 
     def monthly_history(self, labels: list[str]):

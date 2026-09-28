@@ -182,7 +182,10 @@ opening balance
 - outgoing transfers
 ```
 
-Accounts can be deactivated without deleting their historical transactions. `Main Account` is retained as the compatibility/default account.
+Accounts can be deactivated without deleting their historical transactions, but active recurring schedules
+must first be deactivated (paused) or moved to another active account. Otherwise the API returns
+`409 Conflict`. The check and deactivation share the same writer reservation as recurring processing
+on both SQLite and PostgreSQL. `Main Account` cannot be deactivated.
 
 ## Database migrations
 
@@ -607,3 +610,61 @@ the external checks below still require a real hosting target.
 6. Measure connection counts and query plans on deployment-sized data. PostgreSQL still uses
    per-operation connections; a bounded pool remains a capacity improvement to evaluate.
    Statement history itself remains unpaginated; ledger entry pages are bounded.
+
+
+## FIN-01: Inactive accounts and recurring schedule repair
+
+The worker checks the referenced account inside each schedule's writer transaction. A due schedule
+with an inactive or missing account is paused (`active=0`) and emits one warning containing only
+the schedule ID and a fixed reason. It creates no transaction, audit event, or occurrence claim,
+and leaves `account_id` and `next_date` unchanged. Later passes skip the paused schedule.
+Creating or editing a schedule validates its account under the same writer reservation.
+No worker path silently assigns a legacy schedule or its entries to Main Account.
+
+### Owner-reviewed repair
+
+1. Back up the database. Run the following read-only query against the configured backend
+   using a trusted local SQL client. It includes future schedules and schedules already
+   paused by the worker, not just currently due work:
+
+   ```sql
+   SELECT r.id, r.account_id, r.active AS schedule_active, r.next_date,
+          a.active AS account_active
+   FROM recurring_transactions r
+   LEFT JOIN accounts a ON a.id = r.account_id
+   WHERE a.id IS NULL OR a.active <> 1
+   ORDER BY r.id;
+   ```
+
+2. Have the owner review the returned IDs before bulk or manual repairs. For an active
+   schedule on an inactive account, use the Recurring view's Deactivate action
+   (`DELETE /api/recurring/{id}`) to pause it, or Edit to select an explicitly approved
+   active account (`PUT /api/recurring/{id}`). Apply only the reviewed IDs.
+   Pausing is idempotent and works for missing-account schedules through the API as well.
+
+3. Schedules already paused by the worker remain paused. The current UI cannot reactivate
+   them. Keep the original record for traceability; after owner approval, create a replacement
+   on the chosen active account with an explicitly reviewed first occurrence. Creation
+   schedules the first occurrence one interval after its start date. Avoid accidental
+   historical catch-up or duplicate replacement schedules.
+
+4. Re-run the query and confirm no unreviewed active schedules remain on inactive/missing
+   accounts. Inspect any transactions created before this fix separately; this repair does
+   not move, delete, or rewrite historical entries or occurrence claims. Historical
+   reassignment or correction requires a separate owner-approved decision.
+
+No bulk repair of the live database is performed by installing this code. The worker's
+automatic pause is a defensive stop, not approval to reassign or resume a schedule.
+
+
+## FIN-02: Dashboard balance chart period
+
+The dashboard computes one inclusive trailing range: `start = end - (days - 1)`,
+with `end` captured once as the server's current date. Period income, expenses,
+category totals and balance history use those same boundaries.
+
+The balance chart shows a daily closing balance for every calendar day in the returned
+period, including today and days with no transactions. Its opening balance combines
+account opening balances and non-deleted transactions strictly before `start`.
+Those earlier transactions do not become chart points. Transactions after `end`
+are excluded from the chart and period summary. Transfers remain globally neutral.
