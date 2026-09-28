@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, date, datetime
 
+from ..domain import business_date
 from ..domain.errors import NotFound
 from ..domain.money import Money
 from ..domain.transaction import Transaction
@@ -27,6 +28,9 @@ class TransactionRepository(BaseRepository):
             WHERE (t.deleted_at IS NOT NULL) = CAST(? AS BOOLEAN)
         """
         params: list[str | int] = [deleted]
+        if not deleted:
+            query += " AND t.date<=?"
+            params.append(business_date.today().isoformat())
         if search:
             query += " AND (t.description LIKE ? OR t.category LIKE ? OR a.name LIKE ?)"
             params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
@@ -142,10 +146,11 @@ class TransactionRepository(BaseRepository):
         with self.conn:
             self.conn.execute("BEGIN IMMEDIATE")
             row = self.conn.execute(
-                "SELECT account_id, deleted_at FROM transactions WHERE id=?", (transaction_id,)
+                "SELECT account_id, deleted_at, date FROM transactions WHERE id=?", (transaction_id,)
             ).fetchone()
             if row is None:
                 raise NotFound("Transaction not found")
+            business_date.require_posted(date.fromisoformat(row["date"]))
             if row["deleted_at"] is not None:
                 self.resolve_account_id(row["account_id"])
                 self.conn.execute("UPDATE transactions SET deleted_at=NULL WHERE id=?", (transaction_id,))
@@ -174,7 +179,9 @@ class TransactionRepository(BaseRepository):
         return [
             row["category"]
             for row in self.conn.execute(
-                "SELECT DISTINCT category FROM transactions WHERE deleted_at IS NULL ORDER BY category"
+                "SELECT DISTINCT category FROM transactions "
+                "WHERE deleted_at IS NULL AND date<=? ORDER BY category",
+                (business_date.today().isoformat(),),
             )
         ]
 

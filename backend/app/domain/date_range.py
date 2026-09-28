@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from . import business_date
 from .errors import InvalidOperation
 
 
@@ -17,7 +18,7 @@ class DateRange:
     def trailing(cls, days: int, *, end: date | None = None) -> "DateRange":
         if days < 1:
             raise InvalidOperation("Period must contain at least one day")
-        end = end or date.today()
+        end = end or business_date.today()
         try:
             start = end - timedelta(days=days - 1)
         except OverflowError as exc:

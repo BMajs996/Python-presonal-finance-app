@@ -3,6 +3,7 @@
 import hashlib
 import json
 
+from ..domain import business_date
 from ..domain.errors import Conflict, DomainError
 from ..domain.money import Money
 
@@ -17,6 +18,7 @@ class CsvImportService:
         seen = set()
         for index, payload in enumerate(rows):
             try:
+                business_date.require_posted(payload.date)
                 account_id = repo.resolve_account_id(payload.account_id)
             except DomainError as exc:
                 if write:
@@ -53,6 +55,8 @@ class CsvImportService:
 
     def commit(self, payload):
         repo = self.repository
+        for row in payload.rows:
+            business_date.require_posted(row.date)
         serialized = json.dumps([row.model_dump(mode="json") for row in payload.rows], sort_keys=True)
         fingerprint = hashlib.sha256(serialized.encode()).hexdigest()
         key = "csv-import:" + str(payload.batch_id)

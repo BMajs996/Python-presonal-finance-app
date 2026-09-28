@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 
 import pytest
-from app.domain import date_range
+from app.domain import business_date
 from app.domain.date_range import DateRange
 from app.domain.errors import InvalidOperation
 
@@ -19,7 +19,7 @@ def today(monkeypatch):
         def today(cls):
             return fixed
 
-    monkeypatch.setattr(date_range, "date", FrozenDate)
+    monkeypatch.setattr(business_date, "date", FrozenDate)
     return fixed
 
 
@@ -32,6 +32,22 @@ def test_chart_and_summary_share_inclusive_boundaries(raw_client, today, days):
     account = response.json()["id"]
 
     def add(day, kind, amount):
+        if day > today:
+            # Legacy future rows bypass the posted-only service, never the live database.
+            from app.main import app
+            from app.repositories.transaction_repository import TransactionRepository
+            from app.schemas import TransactionCreate
+
+            with app.state.database.connection() as conn:
+                return TransactionRepository(conn).add(
+                    TransactionCreate(
+                        date=day,
+                        type=kind,
+                        category="Boundary",
+                        amount=amount,
+                        account_id=account,
+                    )
+                )["id"]
         response = raw_client.post(
             "/api/transactions",
             json={
@@ -118,7 +134,7 @@ def test_dashboard_reads_today_once_even_if_midnight_passes(raw_client, monkeypa
             reads.append(value)
             return value
 
-    monkeypatch.setattr(date_range, "date", MovingDate)
+    monkeypatch.setattr(business_date, "date", MovingDate)
     dashboard = raw_client.get("/api/dashboard", params={"days": 7}).json()
     assert reads == [date(2026, 9, 27)]
     assert dashboard["period"] == {"days": 7, "start": "2026-09-21", "end": "2026-09-27"}

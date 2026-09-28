@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from ..domain import business_date
 from ..domain.account import Account
 from ..domain.errors import Conflict, InvalidOperation
 from ..domain.money import Money
@@ -16,21 +17,22 @@ class AccountRepository(BaseRepository):
                    a.opening_balance_cents
                    + COALESCE((
                        SELECT SUM(CASE WHEN t.type='income' THEN t.amount_cents ELSE -t.amount_cents END)
-                       FROM transactions t WHERE t.account_id=a.id AND t.deleted_at IS NULL
+                       FROM transactions t WHERE t.account_id=a.id AND t.deleted_at IS NULL AND t.date<=?
                    ), 0)
                    + COALESCE((
-                       SELECT SUM(t.amount_cents) FROM transfers t WHERE t.to_account_id=a.id
+                       SELECT SUM(t.amount_cents) FROM transfers t WHERE t.to_account_id=a.id AND t.date<=?
                    ), 0)
                    - COALESCE((
-                       SELECT SUM(t.amount_cents) FROM transfers t WHERE t.from_account_id=a.id
+                       SELECT SUM(t.amount_cents) FROM transfers t WHERE t.from_account_id=a.id AND t.date<=?
                    ), 0) AS balance_cents,
                    (SELECT COUNT(*) FROM transactions t
-                    WHERE t.account_id=a.id AND t.deleted_at IS NULL) AS transaction_count
+                    WHERE t.account_id=a.id AND t.deleted_at IS NULL AND t.date<=?) AS transaction_count
             FROM accounts a
             {where}
             ORDER BY a.active DESC, a.name
             """
-        rows = self.conn.execute(account_sql).fetchall()
+        cutoff = business_date.today().isoformat()
+        rows = self.conn.execute(account_sql, (cutoff, cutoff, cutoff, cutoff)).fetchall()
         return [self._to_domain(row).to_dict() for row in rows]
 
     def get(self, account_id: int):

@@ -668,3 +668,40 @@ period, including today and days with no transactions. Its opening balance combi
 account opening balances and non-deleted transactions strictly before `start`.
 Those earlier transactions do not become chart points. Transactions after `end`
 are excluded from the chart and period summary. Transfers remain globally neutral.
+
+## FIN-03: Posted-only ledger
+
+Manual transactions and transfers cannot be dated after the server's business date.
+API create/edit, CSV import and transaction recovery enforce this rule; browser date
+limits are supplementary. CSV preview marks future rows invalid. Plan future activity
+using recurring schedules, which only post occurrences through the business date.
+
+The business date is the server's local calendar date, captured once per request.
+Configure the deployment timezone deliberately. Forms obtain their date limit from
+the authenticated `/api/ledger-policy` endpoint, not the browser's timezone.
+
+Existing future entries are preserved, but excluded from posted balances, account
+cards, charts, reports, budget usage, normal transaction lists/exports and transfer
+lists until their date arrives. Future transfers affect neither account early.
+Advancing the date includes existing entries without inserting them again. Current
+month reports show posted activity to date, not a forecast.
+
+### Review existing future entries
+
+Before rollout, back up the database and run this read-only inventory:
+
+```bash
+python -m backend.app.maintenance review-future --limit 100 --offset 0
+```
+
+It uses the configured database without initialization or migrations, and returns
+the business date, total count and entry/account IDs. Increase `--offset` to inspect
+remaining pages. Use `--database /path/to/database.db` to review a specific SQLite
+database instead of the configured PostgreSQL database.
+
+Have the owner review each result. Correct a transaction's date only if it actually
+posted on that date, or delete it after approval. A future transfer can be deleted
+and recreated with its verified actual date. Retain records intentionally awaiting
+their date, or replace planned activity with an owner-approved recurring schedule.
+Do not silently backdate, reassign, delete or duplicate financial entries. Deleted
+transaction history remains available, but future entries cannot be restored early.

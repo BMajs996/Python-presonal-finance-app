@@ -10,6 +10,7 @@ from .core.config import settings
 from .database import FinanceDatabase
 from .database_factory import open_database
 from .services.backup_service import BackupError, BackupService
+from .services.future_entry_review import review_future_entries
 from .services.postgres_migration import transfer_sqlite
 from .services.recurring_runner import process_recurring
 
@@ -36,6 +37,10 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("integrity", parents=[common], help="Check SQLite and foreign-key integrity")
     commands.add_parser("process-recurring", parents=[common], help="Process due recurring transactions")
 
+    review = commands.add_parser("review-future", parents=[common], help="Read-only future-entry inventory")
+    review.add_argument("--limit", type=int, default=100)
+    review.add_argument("--offset", type=int, default=0)
+
     transfer = commands.add_parser(
         "migrate-postgres", parents=[common], help="Verify and copy SQLite to PostgreSQL"
     )
@@ -57,6 +62,16 @@ def main(argv: list[str] | None = None) -> int:
     service = BackupService(args.database or settings.database_path)
 
     try:
+        if args.command == "review-future":
+            url = (
+                settings.database_url.get_secret_value()
+                if settings.database_url and not args.database
+                else None
+            )
+            _print_json(
+                review_future_entries(args.database or settings.database_path, url, args.limit, args.offset)
+            )
+            return 0
         if args.command == "migrate-postgres":
             if settings.database_url is None:
                 raise ValueError("Set DATABASE_URL to the empty PostgreSQL destination")

@@ -38,7 +38,7 @@ export async function loadDashboard() {
   const range = periodLabel(data.period);
   $("balance-period-label").textContent = `Daily balance · ${range}`;
   $("expense-period-label").textContent = range;
-  $("balance-context").textContent = `${data.accounts.length} active ${data.accounts.length === 1 ? "account" : "accounts"}`;
+  $("balance-context").textContent = `As of ${data.period.end}`;
   $("income-context").textContent = range;
   $("expenses-context").textContent = range;
   $("net-context").textContent = `${data.savings_rate.toLocaleString(undefined, {

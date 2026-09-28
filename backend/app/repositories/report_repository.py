@@ -1,5 +1,6 @@
-from datetime import date, timedelta
+from datetime import timedelta
 
+from ..domain import business_date
 from ..domain.date_range import DateRange
 from ..domain.money import Money
 from ..domain.recurrence import add_months
@@ -93,7 +94,7 @@ class ReportRepository(BaseRepository):
 
     def monthly_data(self, months: int = 12):
         months = min(max(months, 1), 60)
-        today = date.today().replace(day=1)
+        today = business_date.today().replace(day=1)
         labels = [add_months(today, -offset).strftime("%Y-%m") for offset in range(months - 1, -1, -1)]
         start_month = labels[0]
         monthly = {
@@ -115,11 +116,11 @@ class ReportRepository(BaseRepository):
                    SUM(CASE WHEN t.type='expense' THEN t.amount_cents ELSE 0 END) expense_cents
             FROM transactions t
             JOIN accounts a ON a.id=t.account_id
-            WHERE t.deleted_at IS NULL AND t.date >= ? AND a.currency=?
+            WHERE t.deleted_at IS NULL AND t.date >= ? AND t.date<=? AND a.currency=?
             GROUP BY month
             ORDER BY month
             """,
-            (start_month + "-01", self.base_currency),
+            (start_month + "-01", business_date.today().isoformat(), self.base_currency),
         ).fetchall()
         for row in rows:
             if row["month"] not in monthly:
@@ -142,13 +143,13 @@ class ReportRepository(BaseRepository):
             FROM transactions t
             JOIN accounts a ON a.id=t.account_id
             WHERE t.deleted_at IS NULL AND t.type='expense'
-              AND t.date >= ?
+              AND t.date >= ? AND t.date<=?
               AND a.currency=?
             GROUP BY t.category
             ORDER BY total_cents DESC
             LIMIT 10
             """,
-            (start_month + "-01", self.base_currency),
+            (start_month + "-01", business_date.today().isoformat(), self.base_currency),
         ).fetchall()
         top_categories = [
             {
@@ -207,7 +208,7 @@ class ReportRepository(BaseRepository):
             FROM transactions t
             JOIN accounts a ON a.id=t.account_id
             WHERE t.deleted_at IS NULL AND t.type='expense'
-              AND t.date >= ?
+              AND t.date >= ? AND t.date<=?
               AND t.category IN ({placeholders})
               AND a.currency=?
             GROUP BY month, t.category
@@ -216,6 +217,6 @@ class ReportRepository(BaseRepository):
             (row["month"], row["category"]): int(row["total_cents"] or 0)
             for row in self.conn.execute(
                 trend_sql,
-                (start_month + "-01", *categories, self.base_currency),
+                (start_month + "-01", business_date.today().isoformat(), *categories, self.base_currency),
             ).fetchall()
         }

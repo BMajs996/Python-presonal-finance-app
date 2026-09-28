@@ -1,6 +1,7 @@
 import logging
 from datetime import date
 
+from ..domain import business_date
 from ..domain.money import Money
 from ..domain.recurrence import calculate_next_date
 from .base_repository import BaseRepository
@@ -101,7 +102,8 @@ class RecurringRepository(BaseRepository):
             )
 
     def process_due(self, through: date | None = None):
-        through = through or date.today()
+        through = through or business_date.today()
+        business_date.require_posted(through)
         if self.conn.in_transaction:
             raise RuntimeError("Recurring processing requires its own transaction")
         created = 0

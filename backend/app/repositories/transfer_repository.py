@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from ..domain import business_date
 from ..domain.errors import InvalidOperation
 from ..domain.money import Money
 from .base_repository import BaseRepository
@@ -14,10 +15,11 @@ class TransferRepository(BaseRepository):
             FROM transfers t
             JOIN accounts f ON f.id=t.from_account_id
             JOIN accounts to_a ON to_a.id=t.to_account_id
+            WHERE t.date<=?
             ORDER BY t.date DESC, t.id DESC
             LIMIT ? OFFSET ?
             """,
-            (limit, offset),
+            (business_date.today().isoformat(), limit, offset),
         ).fetchall()
         return [self._serialize(row) for row in rows]
 

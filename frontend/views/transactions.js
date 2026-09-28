@@ -10,7 +10,7 @@ import {
 import { bindModalClose, closeModal, openModal } from "../components/modal.js";
 import { reportError, toast } from "../components/toast.js";
 import { csvText, csvValue, parseCsv } from "../utils/csv.js";
-import { isIsoDate, todayIso, validateDateRange } from "../utils/dates.js";
+import { getBusinessDate, isIsoDate, todayIso, validateDateRange } from "../utils/dates.js";
 import { $ } from "../utils/dom.js";
 import { escapeAttr, escapeHtml, transactionClass } from "../utils/escape.js";
 import { getBaseCurrency, money } from "../utils/money.js";
@@ -66,7 +66,8 @@ async function openTransactionModal(transaction = null) {
   await loadReferenceData();
   $("modal-title").textContent = transaction ? "Edit transaction" : "Add transaction";
   $("transaction-id").value = transaction?.id || "";
-  $("form-date").value = transaction?.date || todayIso();
+  $("form-date").max = getBusinessDate();
+  $("form-date").value = transaction?.date || getBusinessDate();
   $("form-type").value = transaction?.type || "expense";
   $("form-category").value = transaction?.category || "";
   $("form-amount").value = transaction?.amount || "";
@@ -136,6 +137,7 @@ function validationErrors(mapped) {
   const errors = [];
   const { payload } = mapped;
   if (!isIsoDate(payload.date)) errors.push("Invalid date");
+  else if (payload.date > getBusinessDate()) errors.push("Future-dated entries are not allowed");
   if (!["income", "expense"].includes(payload.type)) errors.push("Type must be income or expense");
   if (!payload.category.trim()) errors.push("Category is required");
   if (!Number.isFinite(payload.amount) || payload.amount <= 0) errors.push("Amount must be positive");

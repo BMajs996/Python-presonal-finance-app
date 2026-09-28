@@ -1,12 +1,12 @@
-from datetime import date
-
+from ..domain import business_date
 from ..domain.money import Money
 from .base_repository import BaseRepository
 
 
 class BudgetRepository(BaseRepository):
     def usage(self):
-        month = date.today().strftime("%Y-%m")
+        today = business_date.today()
+        month = today.strftime("%Y-%m")
         rows = self.conn.execute(
             """
             SELECT b.id, b.category, b.monthly_limit_cents, b.month_year,
@@ -16,11 +16,12 @@ class BudgetRepository(BaseRepository):
               ON t.category=b.category AND t.deleted_at IS NULL
              AND t.type='expense'
              AND substr(t.date, 1, 7)=?
+             AND t.date<=?
             WHERE b.month_year=?
             GROUP BY b.id, b.category, b.monthly_limit_cents, b.month_year
             ORDER BY b.category
             """,
-            (month, month),
+            (month, today.isoformat(), month),
         ).fetchall()
         result = []
         for row in rows:
@@ -40,7 +41,7 @@ class BudgetRepository(BaseRepository):
         return result
 
     def add(self, payload):
-        month = date.today().strftime("%Y-%m")
+        month = business_date.today().strftime("%Y-%m")
         limit = Money.from_amount(payload.monthly_limit, self.base_currency)
         with self.conn:
             self.conn.execute(
@@ -57,7 +58,7 @@ class BudgetRepository(BaseRepository):
         return next(budget for budget in self.usage() if budget["category"] == payload.category.strip())
 
     def update(self, budget_id: int, payload):
-        month = date.today().strftime("%Y-%m")
+        month = business_date.today().strftime("%Y-%m")
         limit = Money.from_amount(payload.monthly_limit, self.base_currency)
         if not self.conn.execute("SELECT id FROM budgets WHERE id=?", (budget_id,)).fetchone():
             return None
