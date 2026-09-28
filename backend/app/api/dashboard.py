@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 
-from ..schemas import DashboardResponse
+from ..domain import business_date
+from ..schemas import DashboardResponse, LedgerPolicy
 from ..services.finance_service import FinanceService
 from .dependencies import get_finance_service
 from .errors import ERROR_RESPONSES
@@ -18,3 +19,8 @@ def dashboard(
 @router.get("/categories", response_model=list[str])
 def categories(service: FinanceService = Depends(get_finance_service)):
     return service.categories()
+
+
+@router.get("/ledger-policy", response_model=LedgerPolicy)
+def ledger_policy():
+    return {"business_date": business_date.today(), "model": "posted-only"}

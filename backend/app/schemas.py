@@ -303,3 +303,8 @@ class CsvPreview(BaseModel):
 class CsvResult(BaseModel):
     imported: int
     duplicates: int
+
+
+class LedgerPolicy(BaseModel):
+    business_date: date
+    model: Literal["posted-only"]

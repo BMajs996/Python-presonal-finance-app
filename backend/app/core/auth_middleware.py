@@ -5,6 +5,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse, RedirectResponse, Response
 
+from ..domain import business_date
 from ..services.auth_service import COOKIE, AuthService
 from .config import settings
 
@@ -29,6 +30,10 @@ class ConfiguredCORS:
 
 class OwnerAccessMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
+        with business_date.snapshot():
+            return await self._dispatch(request, call_next)
+
+    async def _dispatch(self, request, call_next):
         if settings.environment == "production" and request.url.scheme != "https":
             return JSONResponse({"detail": "HTTPS required"}, status_code=400)
         path = request.url.path

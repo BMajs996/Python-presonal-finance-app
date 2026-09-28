@@ -1,5 +1,6 @@
 import { listAccounts } from "../api/accounts.js";
-import { getCategories } from "../api/dashboard.js";
+import { getCategories, getLedgerPolicy } from "../api/dashboard.js";
+import { setBusinessDate } from "../utils/dates.js";
 import { $ } from "../utils/dom.js";
 import { escapeAttr, escapeHtml } from "../utils/escape.js";
 import { money, setBaseCurrency } from "../utils/money.js";
@@ -13,7 +14,8 @@ export function getAccounts() {
 export async function loadReferenceData() {
   const selectedCategory = $("category-filter").value;
   const selectedAccount = $("account-filter").value;
-  const [categories, accountRows] = await Promise.all([getCategories(), listAccounts()]);
+  const [categories, accountRows, policy] = await Promise.all([getCategories(), listAccounts(), getLedgerPolicy()]);
+  setBusinessDate(policy.business_date);
   accounts = accountRows;
   const mainAccount = accounts.find((account) => account.name === "Main Account");
   if (mainAccount) setBaseCurrency(mainAccount.currency);

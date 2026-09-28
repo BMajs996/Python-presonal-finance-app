@@ -3,9 +3,13 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 
 export const test = base.extend({
-  appURL: async ({}, use) => {
+  ledgerScenario: [false, { option: true }],
+  appURL: async ({ ledgerScenario }, use) => {
     const python = process.env.E2E_PYTHON || (existsSync(".venv/bin/python") ? ".venv/bin/python" : "python");
-    const child = spawn(python, ["tests/e2e/server.py"], { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(python, ["tests/e2e/server.py"], {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, E2E_LEDGER_SCENARIO: ledgerScenario ? "1" : "" },
+    });
     let output = "";
     let errors = "";
     child.stderr.on("data", chunk => { errors += chunk; });

@@ -1,3 +1,4 @@
+from ..domain import business_date
 from ..domain.date_range import DateRange
 
 
@@ -18,9 +19,11 @@ class TransactionService:
         return self.repository.get(transaction_id)
 
     def create(self, payload):
+        business_date.require_posted(payload.date)
         return self.repository.add(payload)
 
     def update(self, transaction_id: int, payload):
+        business_date.require_posted(payload.date)
         return self.repository.update(transaction_id, payload)
 
     def delete(self, transaction_id: int):

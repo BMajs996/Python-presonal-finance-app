@@ -1,5 +1,4 @@
-from datetime import date
-
+from ..domain import business_date
 from ..domain.errors import Conflict, InvalidOperation, NotFound
 from ..domain.money import MAX_STATEMENT_BALANCE, Money
 from ..reconciliation_schemas import EntryCursor
@@ -38,7 +37,7 @@ class ReconciliationService:
         return {**statement, "entries": entries[:limit], "next_cursor": next_cursor}
 
     def create(self, payload):
-        if payload.closing_date > date.today():
+        if payload.closing_date > business_date.today():
             raise InvalidOperation("Statement closing date cannot be in the future")
         closing = Money.from_amount(payload.closing_balance, maximum=MAX_STATEMENT_BALANCE).cents
         repo = self.repository

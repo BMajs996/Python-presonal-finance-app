@@ -1,3 +1,4 @@
+from ..domain import business_date
 from ..domain.date_range import DateRange
 from .base_repository import BaseRepository
 
@@ -15,10 +16,10 @@ class BalanceRepository(BaseRepository):
                                        THEN t.amount_cents ELSE -t.amount_cents END)
                        FROM transactions t
                        JOIN accounts a ON a.id=t.account_id
-                       WHERE t.deleted_at IS NULL AND a.currency=?
+                       WHERE t.deleted_at IS NULL AND a.currency=? AND t.date<=?
                    ), 0) AS balance_cents
             """,
-            (self.base_currency, self.base_currency),
+            (self.base_currency, self.base_currency, business_date.today().isoformat()),
         ).fetchone()
         return int(row["balance_cents"] or 0)
 
@@ -81,10 +82,10 @@ class BalanceRepository(BaseRepository):
                                 THEN t.amount_cents ELSE -t.amount_cents END) change_cents
                 FROM transactions t
                 JOIN accounts a ON a.id=t.account_id
-                WHERE t.deleted_at IS NULL AND t.date >= ? AND a.currency=?
+                WHERE t.deleted_at IS NULL AND t.date >= ? AND t.date<=? AND a.currency=?
                 GROUP BY month
                 """,
-                (start_month, self.base_currency),
+                (start_month, business_date.today().isoformat(), self.base_currency),
             )
         }
         return int(opening or 0), changes

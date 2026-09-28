@@ -15,3 +15,14 @@ export function validateDateRange(start, end) {
   if (end && !isIsoDate(end)) throw new Error("Invalid end date");
   if (start && end && start > end) throw new Error("Start date cannot be after end date");
 }
+
+let businessDate = null;
+
+export function setBusinessDate(value) {
+  if (!isIsoDate(value)) throw new Error("Invalid business date");
+  businessDate = value;
+}
+
+export function getBusinessDate() {
+  return businessDate || todayIso();
+}

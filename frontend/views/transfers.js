@@ -4,7 +4,7 @@ import { reportError, toast } from "../components/toast.js";
 import { $ } from "../utils/dom.js";
 import { escapeHtml } from "../utils/escape.js";
 import { money } from "../utils/money.js";
-import { todayIso } from "../utils/dates.js";
+import { getBusinessDate } from "../utils/dates.js";
 import { loadReferenceData } from "./reference-data.js";
 
 export async function loadTransfers() {
@@ -23,7 +23,8 @@ export async function loadTransfers() {
 
 async function openTransferModal() {
   await loadReferenceData();
-  $("transfer-date").value = todayIso();
+  $("transfer-date").max = getBusinessDate();
+  $("transfer-date").value = getBusinessDate();
   $("transfer-amount").value = "";
   $("transfer-description").value = "";
   openModal("transfer-modal");

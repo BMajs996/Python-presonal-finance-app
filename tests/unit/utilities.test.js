@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { csvValue, csvText, parseCsv } from "../../frontend/utils/csv.js";
 import { escapeHtml, escapeAttr, transactionClass } from "../../frontend/utils/escape.js";
 import { money, compactMoney, setBaseCurrency } from "../../frontend/utils/money.js";
-import { isIsoDate, validateDateRange } from "../../frontend/utils/dates.js";
+import { isIsoDate, validateDateRange, getBusinessDate, setBusinessDate, todayIso } from "../../frontend/utils/dates.js";
 
 test("CSV round-trips commas, quotes, multiline text and empty cells", () => {
   const row = ["2026-09-25", 'A "quoted", category', "line one\nline two", "", "€12"];
@@ -88,4 +88,14 @@ test("transaction CSS classes use an allowlist", () => {
   assert.equal(transactionClass("expense"), "expense");
   assert.equal(transactionClass('income" onclick="alert(1)'), "");
   assert.equal(transactionClass(null), "");
+});
+
+test("forms use the server business date and reject invalid metadata", () => {
+  assert.equal(getBusinessDate(), todayIso());
+  setBusinessDate("2026-09-10");
+  assert.equal(getBusinessDate(), "2026-09-10");
+  assert.throws(() => setBusinessDate("2026-02-30"), /Invalid business date/);
+  assert.equal(getBusinessDate(), "2026-09-10");
+  setBusinessDate("2026-09-11");
+  assert.equal(getBusinessDate(), "2026-09-11");
 });
