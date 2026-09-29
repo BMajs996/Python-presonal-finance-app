@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 
+from ..core.config import settings
 from ..domain import business_date
 from ..schemas import DashboardResponse, LedgerPolicy
 from ..services.finance_service import FinanceService
@@ -23,4 +24,8 @@ def categories(service: FinanceService = Depends(get_finance_service)):
 
 @router.get("/ledger-policy", response_model=LedgerPolicy)
 def ledger_policy():
-    return {"business_date": business_date.today(), "model": "posted-only"}
+    return {
+        "business_date": business_date.today(),
+        "business_timezone": settings.business_timezone,
+        "model": "posted-only",
+    }

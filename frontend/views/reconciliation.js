@@ -1,7 +1,8 @@
 import { listReconciliationAccounts, listStatements, getStatement, createStatement, clearEntry, completeStatement, cancelStatement } from "../api/reconciliation.js";
 import { reportError, toast } from "../components/toast.js";
 import { $ } from "../utils/dom.js";
-import { todayIso } from "../utils/dates.js";
+import { setBusinessDate } from "../utils/dates.js";
+import { getLedgerPolicy } from "../api/dashboard.js";
 import { escapeHtml } from "../utils/escape.js";
 import { money } from "../utils/money.js";
 
@@ -70,8 +71,12 @@ export async function loadReconciliation() {
   $("reconciliation-history").replaceChildren();
   render(null);
   try {
-  const loadedAccounts = await listReconciliationAccounts();
+  const [loadedAccounts, policy] = await Promise.all([listReconciliationAccounts(), getLedgerPolicy()]);
   if (token !== requestId) return;
+  setBusinessDate(policy.business_date);
+  const dateInput = $("reconciliation-date");
+  if (!dateInput.value || dateInput.value === dateInput.max) dateInput.value = policy.business_date;
+  dateInput.max = policy.business_date;
   accounts = loadedAccounts;
   $("reconciliation-account").innerHTML = accounts.map(a =>
     `<option value="${a.id}">${escapeHtml(a.name)}${a.active ? "" : " (inactive)"}</option>`).join("");
@@ -142,8 +147,6 @@ export function initReconciliationView() {
       }
     });
   }
-  $("reconciliation-date").value = todayIso();
-  $("reconciliation-date").max = todayIso();
   $("reconciliation-account").addEventListener("change", () => loadReconciliation().catch(reportError));
   $("reconciliation-create").addEventListener("submit", event => {
     event.preventDefault();

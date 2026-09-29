@@ -1,21 +1,37 @@
 """Business date shared by posted-ledger validation and queries."""
 
+from collections.abc import Callable
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import date
+from datetime import UTC, date, datetime
+from zoneinfo import ZoneInfo
 
+from ..core.config import settings
 from .errors import InvalidOperation
 
 _current: ContextVar[date | None] = ContextVar("business_date", default=None)
 
 
+def utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
 def today() -> date:
-    return _current.get() or date.today()
+    captured = _current.get()
+    if captured is not None:
+        return captured
+    return _date_at(utc_now())
+
+
+def _date_at(instant: datetime) -> date:
+    if instant.utcoffset() is None:
+        raise ValueError("Business clock must return a timezone-aware instant")
+    return instant.astimezone(ZoneInfo(settings.business_timezone)).date()
 
 
 @contextmanager
-def snapshot():
-    token = _current.set(today())
+def snapshot(clock: Callable[[], datetime] | None = None):
+    token = _current.set(_date_at(clock()) if clock is not None else today())
     try:
         yield
     finally:

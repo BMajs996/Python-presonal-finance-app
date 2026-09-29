@@ -676,8 +676,8 @@ API create/edit, CSV import and transaction recovery enforce this rule; browser 
 limits are supplementary. CSV preview marks future rows invalid. Plan future activity
 using recurring schedules, which only post occurrences through the business date.
 
-The business date is the server's local calendar date, captured once per request.
-Configure the deployment timezone deliberately. Forms obtain their date limit from
+The business date uses the configured IANA timezone, captured once per request.
+Configure `BUSINESS_TIMEZONE` deliberately (default: `Europe/Belgrade`). Forms obtain their date limit from
 the authenticated `/api/ledger-policy` endpoint, not the browser's timezone.
 
 Existing future entries are preserved, but excluded from posted balances, account
@@ -705,3 +705,35 @@ and recreated with its verified actual date. Retain records intentionally awaiti
 their date, or replace planned activity with an owner-approved recurring schedule.
 Do not silently backdate, reassign, delete or duplicate financial entries. Deleted
 transaction history remains available, but future entries cannot be restored early.
+
+
+## FIN-04: Business timezone
+
+Set `BUSINESS_TIMEZONE=Europe/Belgrade` in the app environment. This explicit default
+is independent of the host's timezone; a UTC-hosted server follows the same financial
+calendar. Other installed IANA names, such as `UTC`, are supported. Invalid names or
+missing timezone data stop startup with a configuration error rather than falling
+back to host time. Deployment images must provide system IANA timezone data
+(`tzdata` on Debian/Ubuntu); verify this before starting the app.
+
+The clock reads an aware UTC instant and converts it with `zoneinfo.ZoneInfo`.
+One business date is captured per HTTP request, recurring-processing pass, and
+future-entry review. A pass spanning midnight keeps its original date; the next
+pass advances. Daylight-saving changes do not duplicate a recurring occurrence.
+Reports, budgets, balances, CSV and future-date validation, and reconciliation
+all use this financial calendar.
+
+The authenticated `/api/ledger-policy` endpoint returns `business_date`,
+`business_timezone`, and the ledger model. Financial forms refresh server date
+metadata when opened; reconciliation refreshes when its view loads. Dashboard
+period labels use returned boundaries, not the browser timezone. A form left open
+through midnight still receives authoritative backend validation when submitted.
+
+Audit, backup, and deletion timestamps remain UTC. Session expiry remains absolute
+time. Stored transaction dates are calendar dates and are not shifted or rewritten.
+No database schema migration or automatic financial-data repair is performed.
+
+Before rollout, confirm the timezone with the owner, set the environment for both
+web and maintenance processes, restart them, and verify the ledger-policy response.
+Changing the timezone later can change which date-based entries are currently
+effective; review that operational change rather than treating it as cosmetic.
