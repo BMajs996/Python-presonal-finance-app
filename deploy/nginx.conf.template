@@ -1,0 +1,64 @@
+# Reference topology: one public Nginx, no CDN or upstream load balancer.
+# Render all placeholder tokens before inclusion inside nginx's http block.
+server {
+    listen @@HTTP_LISTEN@@ default_server;
+    server_name _;
+    return 400;
+}
+
+server {
+    listen @@HTTP_LISTEN@@;
+    server_name @@DOMAIN@@;
+    # Plaintext bodies must never reach authentication.
+    if ($request_method !~ ^(GET|HEAD)$) { return 400; }
+    return 308 https://@@PUBLIC_AUTHORITY@@$request_uri;
+}
+
+server {
+    listen @@HTTPS_LISTEN@@ ssl default_server;
+    ssl_reject_handshake on;
+    server_name _;
+    return 400;
+}
+
+server {
+    listen @@HTTPS_LISTEN@@ ssl;
+    server_name @@DOMAIN@@;
+    ssl_certificate @@CERTIFICATE@@;
+    ssl_certificate_key @@CERTIFICATE_KEY@@;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_tickets off;
+    server_tokens off;
+
+    # SNI matching alone does not validate an HTTP Host header.
+    if ($host != @@DOMAIN@@) { return 400; }
+    client_max_body_size 2m;
+    client_body_timeout 15s;
+    keepalive_timeout 30s;
+    access_log off;
+
+    # Enable only after external HTTPS and renewal verification:
+    # add_header Strict-Transport-Security "max-age=300" always;
+    # Do not add includeSubDomains or preload without a separate review.
+
+    location / {
+        proxy_pass http://127.0.0.1:@@APP_PORT@@;
+        proxy_bind 127.0.0.1;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host @@PUBLIC_AUTHORITY@@;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header Forwarded "";
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header X-Forwarded-Port "";
+        proxy_set_header X-Forwarded-Ssl "";
+        proxy_set_header X-Real-IP "";
+        proxy_set_header True-Client-IP "";
+        proxy_set_header CF-Connecting-IP "";
+        proxy_cache off;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
+    }
+}

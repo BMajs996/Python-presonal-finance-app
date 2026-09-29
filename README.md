@@ -824,3 +824,18 @@ period. Money input endpoints already accept decimal strings; clients should sub
 those rather than approximate numbers. Legacy fields are not deprecated or removed
 until all consumers have migrated. Any future breaking money representation must
 use a new contract version. No stored-money or schema migration is required.
+
+
+## SEC-01: Production proxy boundary
+
+The development runner is not a deployment command. The production entry point is
+`python -m backend.app.serve`: it binds only to 127.0.0.1, disables reload, and
+passes an explicit exact-IP proxy allowlist to Uvicorn. Production requires one
+HTTPS origin, an owner password hash, matching `ALLOWED_HOSTS`, and non-empty
+`TRUSTED_PROXY_IPS`. Forwarded headers from other peers are not trusted.
+
+See [the deployment contract](deploy/README.md) for the Nginx and systemd templates,
+private database/network requirements, real-proxy tests, HSTS rollout and external
+acceptance checklist. These templates assume a single-host proxy, not a CDN chain.
+No system firewall, public listener, live certificate or database is configured by
+this change. **SEC-01 remains pending live verification until hosting is chosen.**

@@ -41,6 +41,7 @@ def owner_settings(monkeypatch):
     monkeypatch.setattr(settings, "owner_password_hash", SecretStr(TEST_OWNER_HASH))
     monkeypatch.setattr(settings, "cors_origins", "http://testserver")
     monkeypatch.setattr(settings, "environment", "development")
+    monkeypatch.setattr(settings, "allowed_hosts", "testserver,localhost,127.0.0.1")
 
 
 TEST_PASSWORD = "synthetic-owner-password"

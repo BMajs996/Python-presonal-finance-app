@@ -1,0 +1,27 @@
+[Unit]
+Description=Finance Dashboard (private application server)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=finance
+Group=finance
+WorkingDirectory=/opt/finance-dashboard
+EnvironmentFile=/etc/finance-dashboard/production.env
+ExecStart=/opt/finance-dashboard/.venv/bin/python -m backend.app.serve
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+StateDirectory=finance-dashboard
+ReadWritePaths=/var/lib/finance-dashboard
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

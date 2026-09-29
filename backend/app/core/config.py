@@ -1,3 +1,5 @@
+import re
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -17,6 +19,9 @@ class Settings(BaseSettings):
     frontend_path: Path = BASE_DIR / "frontend"
     environment: Literal["development", "production"] = "development"
     cors_origins: str = "http://127.0.0.1:8000,http://localhost:8000"
+    allowed_hosts: str = "localhost,127.0.0.1"
+    trusted_proxy_ips: str = ""
+    app_port: int = Field(default=8000, ge=1, le=65535)
     owner_username: str = Field(default="owner", min_length=1, max_length=100)
     owner_password_hash: SecretStr | None = None
     session_seconds: int = Field(default=28800, ge=60, le=86400)
@@ -43,7 +48,52 @@ class Settings(BaseSettings):
             raise ValueError("At least one explicit frontend origin is required")
         if self.environment == "production" and not self.owner_password_hash:
             raise ValueError("Production requires an owner password hash")
+        if self.environment == "production":
+            if len(self.cors_origin_list) != 1:
+                raise ValueError("Production requires one HTTPS frontend origin")
+            if urlsplit(self.cors_origin_list[0]).hostname not in self.allowed_host_list:
+                raise ValueError("Production frontend hostname must be in ALLOWED_HOSTS")
+            if not self.trusted_proxy_list:
+                raise ValueError("Production requires explicit TRUSTED_PROXY_IPS")
         return self
+
+    @field_validator("allowed_hosts")
+    @classmethod
+    def validate_allowed_hosts(cls, value: str) -> str:
+        hosts = [host.strip().lower() for host in value.split(",")]
+        label = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+        if not hosts or any(
+            not host or len(host) > 253 or re.fullmatch(label + r"(?:\." + label + r")*", host) is None
+            for host in hosts
+        ):
+            raise ValueError("ALLOWED_HOSTS must contain exact ASCII hostnames without ports or wildcards")
+        return ",".join(hosts)
+
+    @field_validator("trusted_proxy_ips")
+    @classmethod
+    def validate_proxy_ips(cls, value: str) -> str:
+        if not value.strip():
+            return ""
+        addresses = []
+        for raw in value.split(","):
+            try:
+                address = ip_address(raw.strip())
+            except ValueError as exc:
+                raise ValueError(
+                    "TRUSTED_PROXY_IPS must contain exact IP addresses, not wildcards or networks"
+                ) from exc
+            if address.is_unspecified or address.is_multicast or "%" in str(address):
+                raise ValueError("TRUSTED_PROXY_IPS contains an unsuitable proxy address")
+            addresses.append(str(address))
+        return ",".join(addresses)
+
+    @property
+    def allowed_host_list(self) -> list[str]:
+        return self.allowed_hosts.split(",")
+
+    @property
+    def trusted_proxy_list(self) -> list[str]:
+        return self.trusted_proxy_ips.split(",") if self.trusted_proxy_ips else []
 
     @property
     def secure_cookies(self) -> bool:
