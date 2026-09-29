@@ -101,6 +101,7 @@ class RecurringRepository(BaseRepository):
                 (recurring_id,),
             )
 
+    @business_date.snapshot()
     def process_due(self, through: date | None = None):
         through = through or business_date.today()
         business_date.require_posted(through)

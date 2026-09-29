@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
 from app.domain import business_date
@@ -14,12 +14,7 @@ from .test_auth import raw_client as raw_client
 def today(monkeypatch):
     fixed = date(2026, 9, 27)
 
-    class FrozenDate(date):
-        @classmethod
-        def today(cls):
-            return fixed
-
-    monkeypatch.setattr(business_date, "date", FrozenDate)
+    monkeypatch.setattr(business_date, "utc_now", lambda: datetime.combine(fixed, time(12), UTC))
     return fixed
 
 
@@ -127,14 +122,12 @@ def test_dashboard_reads_today_once_even_if_midnight_passes(raw_client, monkeypa
     login_client(raw_client)
     reads = []
 
-    class MovingDate(date):
-        @classmethod
-        def today(cls):
-            value = date(2026, 9, 27) + timedelta(days=len(reads))
-            reads.append(value)
-            return value
+    def moving_clock():
+        value = date(2026, 9, 27) + timedelta(days=len(reads))
+        reads.append(value)
+        return datetime.combine(value, time(12), UTC)
 
-    monkeypatch.setattr(business_date, "date", MovingDate)
+    monkeypatch.setattr(business_date, "utc_now", moving_clock)
     dashboard = raw_client.get("/api/dashboard", params={"days": 7}).json()
     assert reads == [date(2026, 9, 27)]
     assert dashboard["period"] == {"days": 7, "start": "2026-09-21", "end": "2026-09-27"}

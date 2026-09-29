@@ -1,7 +1,7 @@
 import { createRecurring, deleteRecurring, listRecurring, updateRecurring } from "../api/recurring.js";
 import { bindModalClose, closeModal, openModal } from "../components/modal.js";
 import { reportError, toast } from "../components/toast.js";
-import { todayIso } from "../utils/dates.js";
+import { getBusinessDate } from "../utils/dates.js";
 import { $ } from "../utils/dom.js";
 import { escapeHtml, transactionClass } from "../utils/escape.js";
 import { money } from "../utils/money.js";
@@ -33,7 +33,7 @@ async function openRecurringModal(recurring = null) {
   $("recurring-id").value = recurring?.id || "";
   $("recurring-modal-title").textContent = recurring ? "Edit recurring transaction" : "Add recurring transaction";
   $("recurring-date-label").firstChild.textContent = recurring ? "Next date" : "Start date";
-  $("recurring-date").value = recurring?.next_date || todayIso();
+  $("recurring-date").value = recurring?.next_date || getBusinessDate();
   $("recurring-type").value = recurring?.type || "expense";
   $("recurring-category").value = recurring?.category || "";
   $("recurring-amount").value = recurring?.amount || "";

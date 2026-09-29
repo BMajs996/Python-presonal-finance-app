@@ -306,5 +306,6 @@ class CsvResult(BaseModel):
 
 
 class LedgerPolicy(BaseModel):
+    business_timezone: str
     business_date: date
     model: Literal["posted-only"]

@@ -1,5 +1,5 @@
 import json
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from uuid import uuid4
 
 import pytest
@@ -21,12 +21,7 @@ from .test_auth import raw_client as raw_client
 def clock(monkeypatch):
     value = [date(2026, 9, 10)]
 
-    class Clock(date):
-        @classmethod
-        def today(cls):
-            return value[0]
-
-    monkeypatch.setattr(business_date, "date", Clock)
+    monkeypatch.setattr(business_date, "utc_now", lambda: datetime.combine(value[0], time(12), UTC))
     return value
 
 

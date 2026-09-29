@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -47,6 +48,17 @@ class Settings(BaseSettings):
     @property
     def secure_cookies(self) -> bool:
         return self.environment == "production"
+
+    business_timezone: str = "Europe/Belgrade"
+
+    @field_validator("business_timezone")
+    @classmethod
+    def validate_business_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError("BUSINESS_TIMEZONE must be an installed IANA timezone name") from exc
+        return value
 
     base_currency: str = "USD"
 

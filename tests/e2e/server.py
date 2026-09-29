@@ -21,13 +21,14 @@ if __name__ == "__main__":
             os.environ["DATABASE_URL"] = stack.enter_context(temporary_schema(url))
         os.environ["DATABASE_PATH"] = str(Path(directory) / "test.db")
         os.environ["BASE_CURRENCY"] = "USD"
+        os.environ["BUSINESS_TIMEZONE"] = "Europe/Belgrade"
         from argon2 import PasswordHasher
 
         os.environ["OWNER_PASSWORD_HASH"] = PasswordHasher().hash("synthetic-owner-password")
         os.environ["OWNER_USERNAME"] = "owner"
         os.environ["ENVIRONMENT"] = "development"
         if os.environ.get("E2E_LEDGER_SCENARIO") == "1":
-            from datetime import date, timedelta
+            from datetime import UTC, date, datetime, timedelta
 
             from backend.app.core.config import settings
             from backend.app.database_factory import open_database
@@ -39,14 +40,9 @@ if __name__ == "__main__":
             from backend.app.repositories.transfer_repository import TransferRepository
             from backend.app.schemas import AccountCreate, BudgetCreate, TransactionCreate, TransferCreate
 
-            current_day = [date(2026, 9, 10)]
+            current_instant = [datetime(2026, 9, 10, 21, 59, 59, tzinfo=UTC)]
 
-            class ScenarioDate(date):
-                @classmethod
-                def today(cls):
-                    return current_day[0]
-
-            business_date.date = ScenarioDate
+            business_date.utc_now = lambda: current_instant[0]
             database = open_database(settings)
             try:
                 with database.connection() as conn:
@@ -83,8 +79,13 @@ if __name__ == "__main__":
             # These routes and clock exist only in this disposable test server, never the production app.
             @app.post("/api/e2e/advance-business-day")
             def advance_business_day():
-                current_day[0] += timedelta(days=1)
-                return {"business_date": current_day[0].isoformat()}
+                current_instant[0] += timedelta(days=1)
+                return {"advanced": True}
+
+            @app.post("/api/e2e/cross-midnight")
+            def cross_midnight():
+                current_instant[0] += timedelta(seconds=1)
+                return {"advanced": True}
 
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
