@@ -10,6 +10,7 @@ from .core.config import settings
 from .database import FinanceDatabase
 from .database_factory import open_database
 from .services.backup_service import BackupError, BackupService
+from .services.category_review import review_categories
 from .services.future_entry_review import review_future_entries
 from .services.postgres_migration import transfer_sqlite
 from .services.recurring_runner import process_recurring
@@ -41,6 +42,12 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--limit", type=int, default=100)
     review.add_argument("--offset", type=int, default=0)
 
+    categories = commands.add_parser(
+        "review-categories", parents=[common], help="Read-only category collision audit"
+    )
+    categories.add_argument("--limit", type=int, default=100)
+    categories.add_argument("--offset", type=int, default=0)
+
     transfer = commands.add_parser(
         "migrate-postgres", parents=[common], help="Verify and copy SQLite to PostgreSQL"
     )
@@ -62,15 +69,14 @@ def main(argv: list[str] | None = None) -> int:
     service = BackupService(args.database or settings.database_path)
 
     try:
-        if args.command == "review-future":
+        if args.command in {"review-future", "review-categories"}:
             url = (
                 settings.database_url.get_secret_value()
                 if settings.database_url and not args.database
                 else None
             )
-            _print_json(
-                review_future_entries(args.database or settings.database_path, url, args.limit, args.offset)
-            )
+            review = review_future_entries if args.command == "review-future" else review_categories
+            _print_json(review(args.database or settings.database_path, url, args.limit, args.offset))
             return 0
         if args.command == "migrate-postgres":
             if settings.database_url is None:

@@ -39,6 +39,11 @@ class Money:
     def as_float(self) -> float:
         return float(self.amount)
 
+    def as_decimal_string(self) -> str:
+        sign = "-" if self.cents < 0 else ""
+        whole, fraction = divmod(abs(self.cents), 100)
+        return f"{sign}{whole}.{fraction:02d}"
+
     def __add__(self, other: "Money") -> "Money":
         self._require_same_currency(other)
         return Money(self.cents + other.cents, self.currency)
@@ -50,3 +55,19 @@ class Money:
     def _require_same_currency(self, other: "Money"):
         if self.currency != other.currency:
             raise ValueError("Cannot combine money in different currencies")
+
+
+def money_contract(currency: str, **values: int | list[int]) -> dict:
+    """Versioned exact values derived from cents, never from legacy JSON floats."""
+    return {
+        "version": "decimal-v1",
+        "currency": currency,
+        "values": {
+            key: (
+                [Money(item, currency).as_decimal_string() for item in value]
+                if isinstance(value, list)
+                else Money(value, currency).as_decimal_string()
+            )
+            for key, value in values.items()
+        },
+    }

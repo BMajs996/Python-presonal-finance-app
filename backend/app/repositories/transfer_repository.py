@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 from ..domain import business_date
 from ..domain.errors import InvalidOperation
-from ..domain.money import Money
+from ..domain.money import Money, money_contract
 from .base_repository import BaseRepository
 
 
@@ -84,6 +84,7 @@ class TransferRepository(BaseRepository):
             "from_account_id": row["from_account_id"],
             "to_account_id": row["to_account_id"],
             "amount": amount.as_float(),
+            "money": money_contract(amount.currency, amount=amount.cents),
             "currency": amount.currency,
             "description": row["description"],
             "from_account_name": row["from_account_name"],

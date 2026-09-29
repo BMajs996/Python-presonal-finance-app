@@ -576,7 +576,8 @@ the external checks below still require a real hosting target.
 - CSV files are limited to 2 MiB and 1,000 transactions before preview. Server preview and
   import endpoints also cap batches at 1,000 rows. Preview checks only candidate duplicates,
   not the complete transaction history. Keys include date, type, exact cents, category,
-  description and account. Text comparisons trim and lowercase; likely duplicates are skipped.
+  description and account. Category matching uses exact stored text; description comparisons
+  retain their trimmed/lowercase rule. Likely duplicates are skipped.
 - `POST /api/transactions/import/preview` accepts `{"rows": [...]}`.
   `POST /api/transactions/import` accepts `{"batch_id": "<uuid>", "rows": [...]}`.
   A batch commits financial rows, audit events and its retry receipt atomically. Retrying
@@ -737,3 +738,89 @@ Before rollout, confirm the timezone with the owner, set the environment for bot
 web and maintenance processes, restart them, and verify the ledger-policy response.
 Changing the timezone later can change which date-based entries are currently
 effective; review that operational change rather than treating it as cosmetic.
+
+
+## DATA-01: Category identity and owner-reviewed migration
+
+This release is the **review-first stage**, not a category-ID migration.
+Transaction, recurring and budget inputs trim leading/trailing Unicode whitespace
+and reject blank names. Case, internal whitespace and Unicode spelling otherwise
+remain significant. Budgets, report grouping, filters and CSV category matching all
+use that exact stored text. For example, `Food`, `food`, and `FOOD` remain separate;
+new input ` Food ` is stored as `Food`. Existing historical text is never rewritten.
+
+CSV duplicates require the same date, type, integer-cent amount, exact category,
+account, and the existing trimmed/lowercase description comparison. Category case
+or internal-whitespace variants are no longer silently skipped as duplicates.
+Existing import batch receipts remain idempotent; retrying an old batch returns its
+original result rather than applying new rules to it.
+
+Run the read-only collision inventory before planning category-ID migration:
+
+```bash
+python -m backend.app.maintenance review-categories --limit 100 --offset 0
+```
+
+Use `--database /path/to/database.db` to select SQLite instead of configured
+PostgreSQL. The command never initializes, migrates, or writes the database.
+It uses a consistent read snapshot and includes active/inactive recurring schedules,
+deleted and non-deleted transactions (including future dates), and all budget months.
+
+The candidate key policy `nfc-whitespace-casefold-v1` applies NFC normalization,
+collapses Unicode whitespace runs to one ASCII space while removing edge whitespace,
+applies Unicode case folding, and normalizes to NFC again. It deliberately does not
+apply compatibility normalization (NFKC), remove accents, or merge look-alike characters.
+This key is **only a review signal**, not current financial identity. The report
+records Python's Unicode database version so reviews can detect runtime differences.
+
+Results include candidate collisions and per-variant usage, plus reconciliation
+baselines: row counts and exact cent strings grouped by source, currency, type and
+state/month. Transaction amounts, budget limits, and recurring amounts are kept
+separate; they must not be added together as one financial total.
+
+Next migration gate: back up the database, save this baseline, obtain owner-approved
+mappings from exact names to stable category IDs/display names, and explicitly resolve
+conflicting budget limits. Test the mapping on an isolated restored database, reconcile
+counts and cents by source/currency/type/state before and after, and verify audit history
+and reports before live rollout. Ambiguous variants must remain separate unless approved.
+This PR does not perform those merges or claim that canonicalization is complete.
+
+## DATA-02: Additive exact-money contract
+
+Financial responses retain their existing numeric fields for compatibility and add
+a versioned `money` object. Its decimal strings are generated directly from integer
+cents, never reconstructed from legacy floating-point JSON values.
+
+```json
+{
+  "amount": 12.34,
+  "currency": "USD",
+  "money": {
+    "version": "decimal-v1",
+    "currency": "USD",
+    "values": { "amount": "12.34" }
+  }
+}
+```
+
+The same contract covers transactions, accounts (including negative balances),
+transfers, recurring schedules, budgets, dashboard totals and chart points, monthly
+reports, category totals/trend arrays, reconciliation and transaction audit snapshots.
+For each object, `values` uses its monetary field names, such as `balance`, `income`,
+`spent`, or `totals`. Existing `*_cents` fields use names without the suffix inside
+`values`. Missing legacy audit currency is not guessed: its `money` value is null.
+Percentages and counts remain ordinary numbers and are not monetary values.
+
+Strings use an optional minus sign, digits, and exactly two decimal places, with no
+exponent or grouping separators. This preserves amounts above JavaScript's safe-integer
+range as well as negative values. Python clients should use `Decimal`; JavaScript
+clients can use `decimalToCents` / `centsToDecimal` from
+`frontend/utils/exact-money.js` for BigInt arithmetic. Do not convert exact values to
+`Number` or calculate with the legacy numeric fields.
+
+Browser CSV export now prefers exact amounts and retains trailing cents. Existing
+display/chart clients continue using the legacy fields during the compatibility
+period. Money input endpoints already accept decimal strings; clients should submit
+those rather than approximate numbers. Legacy fields are not deprecated or removed
+until all consumers have migrated. Any future breaking money representation must
+use a new contract version. No stored-money or schema migration is required.

@@ -1,5 +1,5 @@
 from ..domain import business_date
-from ..domain.money import Money
+from ..domain.money import Money, money_contract
 from .base_repository import BaseRepository
 
 
@@ -35,6 +35,7 @@ class BudgetRepository(BaseRepository):
                     "currency": self.base_currency,
                     "month_year": row["month_year"],
                     "spent": spent.as_float(),
+                    "money": money_contract(self.base_currency, monthly_limit=limit.cents, spent=spent.cents),
                     "percentage": (round((spent.cents / limit.cents) * 100, 1) if limit.cents else 0),
                 }
             )

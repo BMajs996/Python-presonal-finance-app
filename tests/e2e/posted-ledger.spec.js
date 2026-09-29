@@ -34,7 +34,8 @@ test("legacy future entries are excluded everywhere and become posted once on th
     await page.locator('nav [data-view="reports"]').click();
     await expect(page.locator("#report-net")).toHaveText("$80.00");
     const data = await (await page.request.get(appURL + "/api/dashboard")).json();
-    expect(data.balance_history.at(-1)).toEqual({ date: "2026-09-11", balance: 80 });
+    expect(data.balance_history.at(-1)).toEqual({ date: "2026-09-11", balance: 80,
+      money: { version: "decimal-v1", currency: "USD", values: { balance: "80.00" } } });
     expect(data.balance_history.every(row => row.date <= data.period.end)).toBe(true);
   }
 });

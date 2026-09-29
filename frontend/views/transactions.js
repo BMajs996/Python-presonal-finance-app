@@ -94,7 +94,11 @@ async function exportCsv() {
   const rows = await fetchAll(filterParams());
   const headers = ["date", "type", "category", "amount", "currency", "description", "account_id", "account_name"];
   const lines = [headers.join(",")].concat(
-    rows.map((transaction) => headers.map((key) => ["amount", "account_id"].includes(key) ? csvValue(transaction[key]) : csvText(transaction[key])).join(",")),
+    rows.map((transaction) => headers.map((key) => {
+      if (key === "amount") return csvValue(transaction.money?.version === "decimal-v1"
+        ? transaction.money.values.amount : transaction.amount);
+      return key === "account_id" ? csvValue(transaction[key]) : csvText(transaction[key]);
+    }).join(",")),
   );
   const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
   const link = document.createElement("a");

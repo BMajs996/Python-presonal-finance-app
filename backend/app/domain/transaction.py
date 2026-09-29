@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import date
 
-from .money import Money
+from .money import Money, money_contract
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +30,7 @@ class Transaction:
             "type": self.type,
             "category": self.category,
             "amount": self.amount.as_float(),
+            "money": money_contract(self.amount.currency, amount=self.amount.cents),
             "currency": self.amount.currency,
             "description": self.description,
             "account_id": self.account_id,

@@ -30,7 +30,7 @@ class CsvImportService:
                 payload.date.isoformat(),
                 payload.type,
                 cents,
-                payload.category.strip().lower(),
+                payload.category,
                 payload.description.strip().lower(),
                 account_id,
             )
@@ -38,7 +38,7 @@ class CsvImportService:
                 key in seen
                 or repo.conn.execute(
                     """SELECT 1 FROM transactions WHERE deleted_at IS NULL
-                AND date=? AND type=? AND amount_cents=? AND lower(trim(category))=?
+                AND date=? AND type=? AND amount_cents=? AND category=?
                 AND lower(trim(description))=? AND account_id=? LIMIT 1""",
                     key,
                 ).fetchone()

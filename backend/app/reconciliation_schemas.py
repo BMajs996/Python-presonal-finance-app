@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from .domain.money import MAX_STATEMENT_BALANCE
+from .money_schemas import CentsMoneyResponse
 
 
 class StatementCreate(BaseModel):
@@ -19,7 +20,8 @@ class ClearedEntry(BaseModel):
     cleared: bool
 
 
-class StatementSummary(BaseModel):
+class StatementSummary(CentsMoneyResponse):
+    currency: str
     id: int
     account_id: int
     closing_date: str
@@ -30,7 +32,8 @@ class StatementSummary(BaseModel):
     completed_at: str | None
 
 
-class StatementEntry(BaseModel):
+class StatementEntry(CentsMoneyResponse):
+    currency: str
     account_id: int
     entry_id: int
     kind: Literal["transaction", "transfer"]

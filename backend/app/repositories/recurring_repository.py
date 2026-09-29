@@ -2,7 +2,7 @@ import logging
 from datetime import date
 
 from ..domain import business_date
-from ..domain.money import Money
+from ..domain.money import Money, money_contract
 from ..domain.recurrence import calculate_next_date
 from .base_repository import BaseRepository
 
@@ -174,6 +174,7 @@ class RecurringRepository(BaseRepository):
         amount = Money(row["amount_cents"], row["account_currency"])
         result = dict(row)
         result["amount"] = amount.as_float()
+        result["money"] = money_contract(amount.currency, amount=amount.cents)
         result["currency"] = amount.currency
         result.pop("amount_cents", None)
         result.pop("account_currency", None)

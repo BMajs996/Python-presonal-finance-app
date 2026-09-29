@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from .money import Money
+from .money import Money, money_contract
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +29,9 @@ class Account:
             "currency": self.currency,
             "opening_balance": self.opening_balance.as_float(),
             "balance": self.balance.as_float(),
+            "money": money_contract(
+                self.currency, opening_balance=self.opening_balance.cents, balance=self.balance.cents
+            ),
             "active": int(self.active),
             "created_at": self.created_at,
             "transaction_count": self.transaction_count,

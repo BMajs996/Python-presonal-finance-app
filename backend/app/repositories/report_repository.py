@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from ..domain import business_date
 from ..domain.date_range import DateRange
-from ..domain.money import Money
+from ..domain.money import Money, money_contract
 from ..domain.recurrence import add_months
 from .account_repository import AccountRepository
 from .base_repository import BaseRepository
@@ -28,6 +28,7 @@ class ReportRepository(BaseRepository):
             {
                 "category": row["category"],
                 "total": Money(int(row["total_cents"] or 0), self.base_currency).as_float(),
+                "money": money_contract(self.base_currency, total=int(row["total_cents"] or 0)),
             }
             for row in self.conn.execute(
                 """
@@ -56,6 +57,9 @@ class ReportRepository(BaseRepository):
             "income": income.as_float(),
             "expenses": expenses_total.as_float(),
             "net": net.as_float(),
+            "money": money_contract(
+                self.base_currency, income=income.cents, expenses=expenses_total.cents, net=net.cents
+            ),
             "savings_rate": (round((net.cents / income.cents) * 100, 1) if income.cents else 0.0),
             "comparison": {
                 "income": self._percentage_change(summary["income"], previous["income"]),
@@ -105,6 +109,7 @@ class ReportRepository(BaseRepository):
                 "net": 0.0,
                 "savings_rate": 0.0,
                 "balance": 0.0,
+                "money": money_contract(self.base_currency, income=0, expenses=0, net=0, balance=0),
             }
             for label in labels
         }
@@ -133,6 +138,9 @@ class ReportRepository(BaseRepository):
                     "income": income.as_float(),
                     "expenses": expenses.as_float(),
                     "net": net.as_float(),
+                    "money": money_contract(
+                        self.base_currency, income=income.cents, expenses=expenses.cents, net=net.cents
+                    ),
                     "savings_rate": (round((net.cents / income.cents) * 100, 1) if income.cents else 0.0),
                 }
             )
@@ -155,6 +163,7 @@ class ReportRepository(BaseRepository):
             {
                 "category": row["category"],
                 "total": Money(int(row["total_cents"] or 0), self.base_currency).as_float(),
+                "money": money_contract(self.base_currency, total=int(row["total_cents"] or 0)),
             }
             for row in category_rows
         ]
@@ -163,6 +172,9 @@ class ReportRepository(BaseRepository):
         category_trends = [
             {
                 "category": category,
+                "money": money_contract(
+                    self.base_currency, totals=[trend_totals.get((label, category), 0) for label in labels]
+                ),
                 "totals": [
                     Money(trend_totals.get((label, category), 0), self.base_currency).as_float()
                     for label in labels
@@ -190,6 +202,12 @@ class ReportRepository(BaseRepository):
                 "income": total_income.as_float(),
                 "expenses": total_expenses.as_float(),
                 "net": net.as_float(),
+                "money": money_contract(
+                    self.base_currency,
+                    income=total_income.cents,
+                    expenses=total_expenses.cents,
+                    net=net.cents,
+                ),
                 "savings_rate": (
                     round((net.cents / total_income.cents) * 100, 1) if total_income.cents else 0.0
                 ),
