@@ -27,6 +27,7 @@ if __name__ == "__main__":
         os.environ["OWNER_PASSWORD_HASH"] = PasswordHasher().hash("synthetic-owner-password")
         os.environ["OWNER_USERNAME"] = "owner"
         os.environ["ENVIRONMENT"] = "development"
+        os.environ["ALLOWED_HOSTS"] = "localhost,127.0.0.1"
         if os.environ.get("E2E_LEDGER_SCENARIO") == "1":
             from datetime import UTC, date, datetime, timedelta
 

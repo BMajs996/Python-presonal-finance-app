@@ -204,6 +204,8 @@ def test_production_requires_https_and_owner():
             _env_file=None,
         )
     configured = Settings(
+        allowed_hosts="example.com",
+        trusted_proxy_ips="127.0.0.1",
         environment="production",
         cors_origins="https://example.com",
         owner_password_hash="test",

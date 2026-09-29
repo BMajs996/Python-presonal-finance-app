@@ -16,7 +16,7 @@ from .api import (
     transfers,
 )
 from .api.errors import register_error_handlers
-from .core.auth_middleware import ConfiguredCORS, OwnerAccessMiddleware
+from .core.auth_middleware import ConfiguredCORS, ConfiguredHosts, OwnerAccessMiddleware
 from .core.config import settings
 from .database_factory import open_database
 from .frontend_assets import frontend_page, frontend_revision
@@ -53,6 +53,7 @@ register_error_handlers(app)
 
 app.add_middleware(OwnerAccessMiddleware)
 app.add_middleware(ConfiguredCORS)
+app.add_middleware(ConfiguredHosts)
 app.include_router(auth.router)
 
 app.include_router(dashboard.router)

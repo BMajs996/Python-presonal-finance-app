@@ -3,6 +3,7 @@ import secrets
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import JSONResponse, RedirectResponse, Response
 
 from ..domain import business_date
@@ -24,6 +25,17 @@ class ConfiguredCORS:
             allow_methods=["GET", "POST", "PUT", "DELETE"],
             allow_headers=["Content-Type", "X-CSRF-Token"],
             max_age=600,
+        )
+        await middleware(scope, receive, send)
+
+
+class ConfiguredHosts:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        middleware = TrustedHostMiddleware(
+            self.app, allowed_hosts=settings.allowed_host_list, www_redirect=False
         )
         await middleware(scope, receive, send)
 
