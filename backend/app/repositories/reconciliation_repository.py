@@ -23,7 +23,9 @@ class ReconciliationRepository(BaseRepository):
         return [
             dict(row)
             for row in self.conn.execute(
-                "SELECT * FROM reconciliations WHERE account_id=? ORDER BY closing_date DESC, id DESC",
+                """SELECT r.*, a.currency FROM reconciliations r
+                JOIN accounts a ON a.id=r.account_id
+                WHERE r.account_id=? ORDER BY r.closing_date DESC, r.id DESC""",
                 (account_id,),
             )
         ]

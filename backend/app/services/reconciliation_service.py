@@ -34,7 +34,11 @@ class ReconciliationService:
             next_cursor = EntryCursor(
                 date=last["date"], kind=last["kind"], entry_id=last["entry_id"]
             ).model_dump_json()
-        return {**statement, "entries": entries[:limit], "next_cursor": next_cursor}
+        return {
+            **statement,
+            "entries": [{**entry, "currency": statement["currency"]} for entry in entries[:limit]],
+            "next_cursor": next_cursor,
+        }
 
     def create(self, payload):
         if payload.closing_date > business_date.today():

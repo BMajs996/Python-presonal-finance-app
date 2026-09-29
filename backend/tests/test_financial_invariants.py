@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 import pytest
 from app.domain.account import Account
-from app.domain.money import Money
+from app.domain.money import Money, money_contract
 from app.domain.transaction import Transaction
 from app.schemas import AccountCreate, TransactionCreate, TransferCreate
 from pydantic import ValidationError
@@ -134,7 +134,9 @@ def test_dashboard_period_and_comparisons_use_only_selected_days(db, finance_ser
         "expenses": -37.5,
         "net": 650,
     }
-    assert dashboard["expense_categories"] == [{"category": "Food", "total": 50}]
+    assert dashboard["expense_categories"] == [
+        {"category": "Food", "total": 50, "money": money_contract("USD", total=5000)}
+    ]
 
 
 def test_transfer_is_neutral_to_global_and_monthly_balance(db, finance_service):

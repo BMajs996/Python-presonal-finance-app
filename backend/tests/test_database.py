@@ -1,6 +1,7 @@
 from datetime import date
 
 import pytest
+from app.domain.money import money_contract
 from app.domain.recurrence import add_months, calculate_next_date
 from app.migrations import LATEST_SCHEMA_VERSION
 
@@ -296,7 +297,11 @@ def test_monthly_report(db, finance_service):
     assert report["summary"]["income"] == 3000
     assert report["summary"]["expenses"] == 600
     assert report["summary"]["savings_rate"] == 80
-    assert report["top_categories"][0] == {"category": "Food", "total": 600}
+    assert report["top_categories"][0] == {
+        "category": "Food",
+        "total": 600,
+        "money": money_contract("USD", total=60000),
+    }
     assert report["category_trends"][0]["category"] == "Food"
     assert report["category_trends"][0]["totals"][-1] == 600
 

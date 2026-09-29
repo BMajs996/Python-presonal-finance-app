@@ -4,6 +4,7 @@ import pytest
 from app.domain import business_date
 from app.domain.date_range import DateRange
 from app.domain.errors import InvalidOperation
+from app.domain.money import money_contract
 
 from .conftest import login_client
 from .postgres_helpers import pg_url as pg_url
@@ -73,11 +74,14 @@ def test_chart_and_summary_share_inclusive_boundaries(raw_client, today, days):
     assert dashboard["income"] == 25.28
     assert dashboard["expenses"] == 3.04
     assert dashboard["net"] == 22.24
-    assert dashboard["expense_categories"] == [{"category": "Boundary", "total": 3.04}]
+    assert dashboard["expense_categories"] == [
+        {"category": "Boundary", "total": 3.04, "money": money_contract("USD", total=304)}
+    ]
     expected = [
         {
             "date": (start + timedelta(days=offset)).isoformat(),
             "balance": 130.42 if offset == days - 1 else 125.36,
+            "money": money_contract("USD", balance=13042 if offset == days - 1 else 12536),
         }
         for offset in range(days)
     ]
@@ -102,7 +106,12 @@ def test_quiet_days_carry_opening_balance_through_today(raw_client, today, days)
     assert dashboard["income"] == 0
     assert dashboard["expenses"] == 0
     assert dashboard["balance_history"] == [
-        {"date": (start + timedelta(days=offset)).isoformat(), "balance": 12.34} for offset in range(days)
+        {
+            "date": (start + timedelta(days=offset)).isoformat(),
+            "balance": 12.34,
+            "money": money_contract("USD", balance=1234),
+        }
+        for offset in range(days)
     ]
     assert dashboard["balance_history"][-1]["date"] == today.isoformat()
 

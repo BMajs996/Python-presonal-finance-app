@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 from app.core.config import settings
 from app.domain import business_date
+from app.domain.money import money_contract
 from app.main import app
 from app.maintenance import main
 from app.repositories.transaction_repository import TransactionRepository
@@ -156,7 +157,9 @@ def test_legacy_future_rows_become_effective_once_across_all_posted_views(raw_cl
         report = raw_client.get("/api/reports/monthly").json()
         assert report["summary"]["net"] == 80
         assert report["months"][-1]["balance"] == 80
-        assert report["top_categories"] == [{"category": "Food", "total": 20}]
+        assert report["top_categories"] == [
+            {"category": "Food", "total": 20, "money": money_contract("USD", total=2000)}
+        ]
         assert raw_client.get("/api/budgets").json()[0]["spent"] == 20
     with app.state.database.connection() as conn:
         assert conn.execute("SELECT COUNT(*) FROM transaction_audit").fetchone()[0] == 2

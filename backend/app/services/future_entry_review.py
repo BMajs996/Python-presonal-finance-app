@@ -1,13 +1,9 @@
 """Read-only inventory of legacy future entries; never initializes or migrates a database."""
 
-import sqlite3
-from contextlib import closing
 from pathlib import Path
 
-import psycopg
-
 from ..domain import business_date
-from ..postgres_connection import PostgresConnection, record_factory
+from .read_only_database import read_only_database
 
 
 def inventory(connection, limit: int, offset: int):
@@ -36,12 +32,5 @@ def inventory(connection, limit: int, offset: int):
 def review_future_entries(path: Path, url: str | None = None, limit: int = 100, offset: int = 0):
     if not 1 <= limit <= 1000 or offset < 0:
         raise ValueError("Review requires limit 1-1000 and a non-negative offset")
-    with business_date.snapshot():
-        if url:
-            with psycopg.connect(url, row_factory=record_factory, connect_timeout=10) as raw:
-                raw.execute("SET TRANSACTION READ ONLY")
-                return inventory(PostgresConnection(raw), limit, offset)
-        with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as connection:
-            connection.row_factory = sqlite3.Row
-            connection.execute("PRAGMA query_only=ON")
-            return inventory(connection, limit, offset)
+    with business_date.snapshot(), read_only_database(path, url) as connection:
+        return inventory(connection, limit, offset)

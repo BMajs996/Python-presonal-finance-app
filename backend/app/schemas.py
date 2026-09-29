@@ -5,7 +5,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from .domain.category import clean_category
 from .domain.money import MAX_AMOUNT
+from .money_schemas import CentsMoneyResponse, MoneyContract
 
 TransactionType = Literal["income", "expense"]
 Frequency = Literal["daily", "weekly", "monthly", "yearly"]
@@ -23,10 +25,7 @@ class TransactionCreate(BaseModel):
     @field_validator("category")
     @classmethod
     def clean_category(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("Category is required")
-        return value
+        return clean_category(value)
 
 
 class TransactionUpdate(TransactionCreate):
@@ -45,10 +44,7 @@ class RecurringCreate(BaseModel):
     @field_validator("category")
     @classmethod
     def clean_category(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("Category is required")
-        return value
+        return clean_category(value)
 
 
 class RecurringUpdate(BaseModel):
@@ -63,13 +59,12 @@ class RecurringUpdate(BaseModel):
     @field_validator("category")
     @classmethod
     def clean_category(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("Category is required")
-        return value
+        return clean_category(value)
 
 
 class BudgetCreate(BaseModel):
+    _clean_category = field_validator("category")(clean_category)
+
     category: str = Field(min_length=1, max_length=100)
     monthly_limit: Decimal = Field(gt=0, le=MAX_AMOUNT, decimal_places=2)
 
@@ -110,6 +105,7 @@ class TransferCreate(BaseModel):
 
 
 class TransactionResponse(BaseModel):
+    money: MoneyContract
     id: int
     date: str
     type: str
@@ -122,6 +118,7 @@ class TransactionResponse(BaseModel):
 
 
 class AccountResponse(BaseModel):
+    money: MoneyContract
     id: int
     name: str
     type: str
@@ -134,6 +131,7 @@ class AccountResponse(BaseModel):
 
 
 class TransferResponse(BaseModel):
+    money: MoneyContract
     id: int
     date: str
     from_account_id: int
@@ -147,6 +145,7 @@ class TransferResponse(BaseModel):
 
 
 class BudgetResponse(BaseModel):
+    money: MoneyContract
     id: int
     category: str
     monthly_limit: float
@@ -162,6 +161,7 @@ class TransactionPage(BaseModel):
 
 
 class RecurringResponse(BaseModel):
+    money: MoneyContract
     id: int
     type: str
     category: str
@@ -188,16 +188,19 @@ class ComparisonResponse(BaseModel):
 
 
 class CategoryTotal(BaseModel):
+    money: MoneyContract
     category: str
     total: float
 
 
 class BalancePoint(BaseModel):
+    money: MoneyContract
     date: str
     balance: float
 
 
 class ReportSummary(BaseModel):
+    money: MoneyContract
     income: float
     expenses: float
     net: float
@@ -210,6 +213,7 @@ class MonthlyPoint(ReportSummary):
 
 
 class CategoryTrend(BaseModel):
+    money: MoneyContract
     category: str
     totals: list[float]
 
@@ -231,6 +235,7 @@ class HealthResponse(BaseModel):
 
 
 class DashboardResponse(BaseModel):
+    money: MoneyContract
     currency: str
     period: PeriodResponse
     balance: float
@@ -255,7 +260,7 @@ class DeletedTransactionPage(BaseModel):
     total: int
 
 
-class TransactionSnapshot(BaseModel):
+class TransactionSnapshot(CentsMoneyResponse):
     id: int
     date: str
     type: str
