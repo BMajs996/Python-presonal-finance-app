@@ -138,3 +138,105 @@ References:
 - https://nginx.org/en/docs/http/ngx_http_ssl_module.html#ssl_reject_handshake
 - https://starlette.dev/middleware/#trustedhostmiddleware
 - https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Strict_Transport_Security_Cheat_Sheet.html
+
+## SEC-02: Request admission before application work
+
+The reference proxy buffers each complete request before forwarding it to Uvicorn.
+It enforces these serialized body-byte limits, regardless of Content-Length or
+HTTP/1.1 chunked framing:
+
+| Route | Body limit | Idle body-read timeout |
+| --- | --- | --- |
+| /api/auth/login (including trailing slash) | 16 KiB | 5 seconds |
+| /api/transactions/import | 8 MiB | 15 seconds |
+| /api/transactions/import/preview | 8 MiB | 15 seconds |
+| Other proxied requests | 2 MiB | 10 seconds |
+
+CSV trailing-slash variants have the same limit. Query strings do not change route
+selection. Tests include an encoded login path to guard against limit bypass.
+A 10-second header-read timeout is configured at the http level; avoid duplicating
+that directive in the surrounding nginx.conf when including this template.
+
+Oversized requests receive HTTP 413 before the application parses JSON, verifies a
+password, validates a session, or writes financial data. Incomplete uploads are
+closed on timeout; Nginx may record 408 without sending a response body. Clients
+must handle both a timeout/connection closure and an HTTP error.
+
+### Why these byte limits
+
+Login permits 100 username characters and 1,024 password characters. JSON can encode
+one non-BMP Unicode character as two escaped surrogate values, consuming 12 bytes.
+The resulting maximum-length field fixture is below 16 KiB, including JSON syntax.
+
+CSV requests permit 1,000 rows, with 100 category characters and 500 description
+characters per row. The escaped text alone can occupy 7,200,000 bytes:
+1,000 * (100 + 500) * 12. JSON field names, dates, amounts, account references and
+the batch UUID need additional space. An 8 MiB limit accommodates the tested
+maximum-length Unicode fixture; a 2 MiB blanket limit did not.
+
+The integration fixture uses 1,000 distinct rows with all category/description
+characters occupying 12 escaped bytes. It tests chunked preview, ordinary import,
+and an equivalent UTF-8 retry, confirming exactly 1,000 inserts rather than 2,000.
+This is a bounded wire contract, not a guarantee that arbitrary whitespace,
+unbounded numeric spellings, unknown properties, or repeated JSON keys fit.
+Clients should use ordinary compact JSON and respect the independent row limit.
+
+### Memory, disk, and slow-client limits
+
+proxy_request_buffering is explicitly enabled, including for chunked requests.
+client_body_buffer_size is 16 KiB; larger bodies can spill to Nginx's private
+temporary directory instead of being held entirely in application memory.
+The limit bounds admitted body bytes, not the entire Python object's memory after
+a valid request is parsed. Concurrent valid imports can still consume resources.
+
+Keep the Nginx body temporary directory private to the service, monitor available
+space, and size/restrict its filesystem for the expected concurrency. Do not enable
+persistent request-body files or body logging. Review worker/connection capacity,
+per-source/global concurrency limits and upstream capacity on the actual host.
+The tests include a coarse Linux resident-memory regression check after repeated
+rejections, not a peak-memory or concurrent-load capacity certification.
+
+Important: client_body_timeout limits the gap between reads, NOT total upload
+duration or a minimum transfer rate. A client sending occasional bytes before
+the timeout can hold a connection longer. This configuration is not a complete
+slow-drip or DDoS defense. A total upload deadline/minimum rate requires an
+appropriate additional edge capability and separate tests; do not claim the
+5/15-second values enforce total request deadlines.
+
+### Why there is no ASGI byte limiter here
+
+The supported public path is Nginx -> private loopback Uvicorn. Keeping rejection
+before any application work avoids a second full-body buffer and stream/response
+ordering complexity inside ASGI. Development's direct Uvicorn launcher does NOT
+provide these edge limits and must not be exposed publicly.
+
+If a later topology permits direct application access or requires defense in
+depth, implement and independently test a bounded ASGI receive wrapper. It must
+count streamed chunks and reject cleanly before starting a response; raising from
+a late receive callback alone is insufficient. Do not assume Content-Length is
+present or honest.
+
+### Regression and launch checks
+
+Run the real-proxy tests described above. They cover both SQLite and PostgreSQL:
+
+- Known-length and chunked oversized login, import, and preview requests.
+- Unauthenticated and authenticated import rejection before upstream access.
+- Login byte-boundary acceptance and maximum-length escaped login fields.
+- Incomplete login/import uploads ending at their route-specific idle timeout.
+- Query, trailing-slash, encoded-path and default-route limit behavior.
+- No login counter changes, password work, or transaction inserts for rejected
+  requests; a test-only status/upstream log confirms no Uvicorn connection.
+- A maximum-length 1,000-row Unicode preview/import and idempotent UTF-8 retry.
+- Existing SEC-01 HTTPS, forwarding, CSRF, cookie and login-isolation behavior.
+
+Before launch, repeat the byte-limit and incomplete-upload checks through the real
+public endpoint using synthetic credentials/data. Verify that no CDN, alternative
+location, inherited buffering directive, public app port, or alternate listener
+bypasses these controls. Measure concurrent upload memory/temp-disk use on staging.
+No public deployment or external load verification has been performed by this PR.
+
+References:
+- [Nginx request body limits and buffers](https://nginx.org/en/docs/http/ngx_http_core_module.html#client_max_body_size)
+- [Nginx body-read timeout semantics](https://nginx.org/en/docs/http/ngx_http_core_module.html#client_body_timeout)
+- [Nginx proxy request buffering](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_request_buffering)

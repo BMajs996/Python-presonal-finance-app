@@ -1,5 +1,6 @@
 # Reference topology: one public Nginx, no CDN or upstream load balancer.
 # Render all placeholder tokens before inclusion inside nginx's http block.
+client_header_timeout 10s;
 server {
     listen @@HTTP_LISTEN@@ default_server;
     server_name _;
@@ -33,7 +34,8 @@ server {
     # SNI matching alone does not validate an HTTP Host header.
     if ($host != @@DOMAIN@@) { return 400; }
     client_max_body_size 2m;
-    client_body_timeout 15s;
+    client_body_timeout 10s;
+    client_body_buffer_size 16k;
     keepalive_timeout 30s;
     access_log off;
 
@@ -41,24 +43,39 @@ server {
     # add_header Strict-Transport-Security "max-age=300" always;
     # Do not add includeSubDomains or preload without a separate review.
 
+    # Share trust settings across all locations; buffer before contacting Uvicorn.
+    proxy_request_buffering on;
+    proxy_bind 127.0.0.1;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host @@PUBLIC_AUTHORITY@@;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header Forwarded "";
+    proxy_set_header X-Forwarded-Host "";
+    proxy_set_header X-Forwarded-Port "";
+    proxy_set_header X-Forwarded-Ssl "";
+    proxy_set_header X-Real-IP "";
+    proxy_set_header True-Client-IP "";
+    proxy_set_header CF-Connecting-IP "";
+    proxy_cache off;
+    proxy_connect_timeout 5s;
+    proxy_read_timeout 60s;
+    proxy_send_timeout 60s;
+
+    location ~ ^/api/auth/login/?$ {
+        client_max_body_size 16k;
+        client_body_timeout 5s;
+        proxy_pass http://127.0.0.1:@@APP_PORT@@;
+    }
+
+    location ~ ^/api/transactions/import(?:/preview)?/?$ {
+        client_max_body_size 8m;
+        client_body_timeout 15s;
+        proxy_pass http://127.0.0.1:@@APP_PORT@@;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:@@APP_PORT@@;
-        proxy_bind 127.0.0.1;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
-        proxy_set_header Host @@PUBLIC_AUTHORITY@@;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header Forwarded "";
-        proxy_set_header X-Forwarded-Host "";
-        proxy_set_header X-Forwarded-Port "";
-        proxy_set_header X-Forwarded-Ssl "";
-        proxy_set_header X-Real-IP "";
-        proxy_set_header True-Client-IP "";
-        proxy_set_header CF-Connecting-IP "";
-        proxy_cache off;
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 60s;
-        proxy_send_timeout 60s;
     }
 }
