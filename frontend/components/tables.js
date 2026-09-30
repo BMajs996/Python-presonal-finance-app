@@ -29,7 +29,8 @@ export function renderRecentTransactions(items, target) {
 
 function budgetProgress(budget) {
   const className = budget.percentage >= 100 ? "danger" : budget.percentage >= 80 ? "warn" : "";
-  return `<div class="progress"><span class="${className}" style="width:${Math.min(100, budget.percentage)}%"></span></div>`;
+  const value = Math.max(0, Math.min(100, Number(budget.percentage) || 0));
+  return `<progress class="progress ${className}" max="100" value="${value}" aria-label="${escapeHtml(budget.category)} budget used"></progress>`;
 }
 
 export function renderBudgets(budgets, target, editable = false) {

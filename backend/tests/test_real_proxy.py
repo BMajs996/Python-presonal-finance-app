@@ -195,6 +195,13 @@ def test_real_tls_proxy_authentication_and_spoof_resistance(proxy_stack):
     assert counters(stack) == before
     assert first.get("/api/health", headers={"Host": "evil.example"}).status_code == 400
     assert "strict-transport-security" not in first.get("/login").headers
+    for path in ("/login", "/assets/styles.css"):
+        proxied = first.get(path)
+        policies = proxied.headers.get_list("content-security-policy")
+        assert len(policies) == 1
+        assert "script-src 'self'" in policies[0]
+        assert "'unsafe-inline'" not in policies[0]
+        assert "content-security-policy-report-only" not in proxied.headers
     assert first.get("/api/health", headers={"X-Forwarded-Proto": "http"}).status_code == 200
 
     forged = [

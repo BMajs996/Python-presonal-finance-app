@@ -84,8 +84,9 @@ class OwnerAccessMiddleware(BaseHTTPMiddleware):
         elif path.startswith("/assets/"):
             response.headers["Cache-Control"] = "no-cache"
         if path in {"/", "/login"} or path.startswith("/assets/"):
-            response.headers["Content-Security-Policy-Report-Only"] = (
-                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self'; script-src-attr 'none'; "
+                "style-src 'self'; style-src-attr 'none'; "
                 "img-src 'self' data:; connect-src 'self'; object-src 'none'; "
                 "base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
             )

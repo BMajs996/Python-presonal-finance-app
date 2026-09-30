@@ -290,10 +290,21 @@ def test_production_rejects_plaintext_even_with_spoofed_proxy_header(raw_client,
     assert response.json()["detail"] == "HTTPS required"
 
 
-def test_content_security_policy_is_report_only(raw_client):
-    response = raw_client.get("/login")
-    assert "script-src 'self'" in response.headers["content-security-policy-report-only"]
-    assert "content-security-policy" not in response.headers
+def test_content_security_policy_is_enforced(raw_client):
+    for path in ("/login", "/assets/styles.css"):
+        response = raw_client.get(path)
+        assert response.status_code == 200
+        policy = response.headers["content-security-policy"]
+        assert "script-src 'self'" in policy
+        assert "script-src-attr 'none'" in policy
+        assert "style-src 'self'" in policy
+        assert "style-src-attr 'none'" in policy
+        assert "object-src 'none'" in policy
+        assert "base-uri 'none'" in policy
+        assert "frame-ancestors 'none'" in policy
+        assert "'unsafe-inline'" not in policy
+        assert "content-security-policy-report-only" not in response.headers
+        assert response.headers["x-frame-options"] == "DENY"
 
 
 def test_source_limit_does_not_lock_out_another_source(raw_client, monkeypatch):
