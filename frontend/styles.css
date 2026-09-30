@@ -129,10 +129,14 @@ td.amount, .transaction-amount, .account-card > strong { font-variant-numeric: t
 .budget-item { margin-bottom: 17px; }
 .budget-item:last-child { margin-bottom: 0; }
 .budget-top { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px; }
-.progress { height: 8px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
-.progress span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
-.progress span.warn { background: #e7a62b; }
-.progress span.danger { background: var(--danger); }
+.progress { display: block; width: 100%; height: 8px; border: 0; border-radius: 99px; appearance: none; background: var(--surface-2); overflow: hidden; }
+.progress::-webkit-progress-bar { border-radius: inherit; background: var(--surface-2); }
+.progress::-webkit-progress-value { border-radius: inherit; background: var(--accent); }
+.progress::-moz-progress-bar { border-radius: inherit; background: var(--accent); }
+.progress.warn::-webkit-progress-value { background: #e7a62b; }
+.progress.warn::-moz-progress-bar { background: #e7a62b; }
+.progress.danger::-webkit-progress-value { background: var(--danger); }
+.progress.danger::-moz-progress-bar { background: var(--danger); }
 
 .budget-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
 .budget-card { border: 1px solid var(--border); border-radius: 13px; padding: 18px; }

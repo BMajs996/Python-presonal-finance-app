@@ -22,6 +22,8 @@ test("legacy future entries are excluded everywhere and become posted once on th
     await expect(page.locator("#income")).toHaveText("$100.00");
     await expect(page.locator("#expenses")).toHaveText("$20.00");
     await expect(page.locator("#budget-list")).toContainText("$20.00");
+    await expect(page.locator("#budget-list progress")).toHaveAttribute("value", "20");
+    await expect(page.locator("#budget-list progress")).not.toHaveAttribute("style", /.+/);
     await expect(page.locator("#recent-transactions")).toContainText("Future income");
     const main = page.locator("#account-list .account-card").filter({ hasText: "Main Account" });
     const savings = page.locator("#account-list .account-card").filter({ hasText: "Savings" });

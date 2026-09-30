@@ -591,8 +591,9 @@ the external checks below still require a real hosting target.
   This changes export text only, not database values. Reimport preserves the protective apostrophe.
   Verify behavior in your target spreadsheet; editing/re-saving can remove spreadsheet protections.
 - Legacy date/type text is escaped when rendered and transaction CSS classes are allowlisted.
-  A same-origin Content-Security-Policy is currently **report-only**, not an enforcement claim.
-  Review browser policy violations on staging before switching to enforcement.
+  The app enforces a same-origin Content-Security-Policy on UI and asset responses.
+  Scripts and styles must be external same-origin assets; inline scripts, event handlers,
+  and style attributes are blocked. Validate the rendered header on staging and review violations.
 - Monthly report predicates compare ISO dates directly rather than wrapping indexed date
   columns in `substr`. Grouping still uses month labels; report totals sum integer cents.
 
@@ -604,8 +605,8 @@ the external checks below still require a real hosting target.
    Verify real client-address throttling and HTTPS scheme propagation through the actual proxy.
 3. Verify TLS and redirects externally, then enable HSTS at the edge with an appropriate
    rollout policy. Do not enable includeSubDomains/preload without reviewing every subdomain.
-4. Collect CSP violations during staging and enforce the tested policy. Review any legacy
-   malformed dates/types before introducing stricter database guards.
+4. Verify the enforced CSP and browser console on staging, including the real proxy header.
+   Review any legacy malformed dates/types before introducing stricter database guards.
 5. Run a backup/restore drill and compare balances, reports, history and reconciliations
    on an isolated restored database. Rotate owner credentials before exposing a restored app.
 6. Measure connection counts and query plans on deployment-sized data. PostgreSQL still uses

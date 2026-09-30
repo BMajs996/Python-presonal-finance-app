@@ -38,12 +38,18 @@ export const test = base.extend({
   },
   page: async ({ page, appURL }, use) => {
     const errors = [];
+    const policyErrors = [];
     await page.addInitScript(() => {
       window.cspViolations = [];
       document.addEventListener("securitypolicyviolation", event =>
         window.cspViolations.push(event.violatedDirective));
     });
     page.on("pageerror", error => errors.push(error.message));
+    page.on("console", message => {
+      if (message.type() === "error" && /Content Security Policy|Refused to (execute|apply|load)/i.test(message.text())) {
+        policyErrors.push(message.text());
+      }
+    });
     await page.route("**/*", route => {
       const url = route.request().url();
       return url.startsWith(appURL) || url.startsWith("blob:") ? route.continue() : route.abort();
@@ -59,6 +65,7 @@ export const test = base.extend({
     await use(page);
     expect(errors).toEqual([]);
     expect(await page.evaluate(() => window.cspViolations)).toEqual([]);
+    expect(policyErrors).toEqual([]);
   },
 });
 export { expect };

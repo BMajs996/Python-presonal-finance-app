@@ -75,6 +75,23 @@ Do not enable a global real_ip_header/set_real_ip_from rule that changes $remote
 without reviewing the full upstream trust chain. Never log passwords, cookies,
 CSRF tokens, Authorization headers, or request bodies.
 
+## Content Security Policy
+
+The app sends one enforced Content-Security-Policy header on the UI and assets.
+The policy allows same-origin external scripts and styles, and blocks inline scripts,
+event handlers and style attributes. object-src, base-uri, and frame-ancestors are
+set to 'none'; X-Frame-Options: DENY remains as a compatibility header.
+Nginx should forward this header unchanged. Do not add another CSP or a
+Report-Only header at the proxy: multiple enforced policies apply together and may
+block valid pages. The real-proxy test checks for one policy header.
+
+Before launch, use a staging HTTPS origin to exercise login, charts, modals, CSV
+import, budgets and sign-out. Review securitypolicyviolation events and the
+browser console. Compare the delivered header with the app policy, and test that
+synthetic inline scripts and event handlers do not run. If a legitimate workflow
+is blocked, restore the prior release while fixing the violation, then repeat the
+staging checks. No public staging origin has been verified by these local tests.
+
 ## HSTS rollout
 
 HSTS is OFF in the template. First verify external HTTPS, the full certificate chain,
