@@ -839,3 +839,16 @@ private database/network requirements, real-proxy tests, HSTS rollout and extern
 acceptance checklist. These templates assume a single-host proxy, not a CDN chain.
 No system firewall, public listener, live certificate or database is configured by
 this change. **SEC-01 remains pending live verification until hosting is chosen.**
+
+## Request-size protection (SEC-02)
+
+The reference Nginx deployment now enforces a 16 KiB login body limit and an 8 MiB
+CSV preview/import limit before forwarding requests to the application. Other
+routes retain a 2 MiB limit. Complete request buffering and route-specific idle
+read timeouts cover both declared-length and chunked uploads.
+
+A real-proxy regression suite verifies early rejection and successful maximum-length
+1,000-row Unicode imports on SQLite and PostgreSQL. These protections require the
+proxy; the direct development server does not enforce them. Idle timeouts are not
+total upload deadlines. See [the deployment contract](deploy/README.md#sec-02-request-admission-before-application-work)
+for sizing, temporary storage, limitations, and required live verification.
