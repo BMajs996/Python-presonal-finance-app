@@ -37,9 +37,11 @@ const viewLoaders = {
 async function showView(view) {
   document.querySelectorAll(".view").forEach((element) => element.classList.add("hidden"));
   $(`${view}-view`).classList.remove("hidden");
+  $("mobile-nav-toggle").setAttribute("aria-expanded", "false");
   document.querySelectorAll(".nav-item").forEach((button) =>
     button.classList.toggle("active", button.dataset.view === view));
   $("page-title").textContent = viewTitles[view];
+  document.querySelector(".eyebrow").textContent = view === "dashboard" ? "Financial overview" : "Personal finance";
   await viewLoaders[view]?.();
 }
 
@@ -50,6 +52,13 @@ async function refresh() {
 }
 
 function initNavigation() {
+  $("mobile-nav-toggle").addEventListener("click", () => {
+    const button = $("mobile-nav-toggle");
+    button.setAttribute("aria-expanded", String(button.getAttribute("aria-expanded") !== "true"));
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") $("mobile-nav-toggle").setAttribute("aria-expanded", "false");
+  });
   document.querySelectorAll(".nav-item").forEach((button) =>
     button.addEventListener("click", () => showView(button.dataset.view).catch(reportError)));
   document.querySelectorAll("[data-view-target]").forEach((button) =>

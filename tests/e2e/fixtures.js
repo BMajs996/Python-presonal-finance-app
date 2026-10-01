@@ -69,3 +69,11 @@ export const test = base.extend({
   },
 });
 export { expect };
+
+export async function navigateTo(page, view) {
+  const menu = page.locator("#mobile-nav-toggle");
+  if (await menu.isVisible() && await menu.getAttribute("aria-expanded") !== "true") {
+    await menu.click();
+  }
+  await page.locator(`nav [data-view="${view}"]`).click();
+}

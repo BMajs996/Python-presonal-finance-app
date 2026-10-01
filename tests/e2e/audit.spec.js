@@ -1,8 +1,8 @@
-import { test, expect } from "./fixtures.js";
+import { test, expect, navigateTo } from "./fixtures.js";
 import { parseCsv } from "../../frontend/utils/csv.js";
 
 test("history, immediate undo and recovery after reload", async ({ page, appURL }, testInfo) => {
-  await page.locator('nav [data-view="transactions"]').click();
+  await navigateTo(page, "transactions");
   await page.locator("#add-transaction-btn-2").click();
   await page.locator("#form-category").fill("Food");
   await page.locator("#form-amount").fill("12.34");
@@ -37,7 +37,7 @@ test("history, immediate undo and recovery after reload", async ({ page, appURL 
   await row.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(row).toHaveCount(0);
   await page.reload();
-  await page.locator('nav [data-view="transactions"]').click();
+  await navigateTo(page, "transactions");
 
   const downloadPromise = page.waitForEvent("download");
   await page.locator("#export-csv-btn").click();
@@ -61,7 +61,7 @@ test("history, immediate undo and recovery after reload", async ({ page, appURL 
   await page.locator("#close-deleted-transactions").click();
   await expect(page.locator("#deleted-transactions-btn")).toBeFocused();
   await expect(row).toHaveCount(1);
-  await page.locator('nav [data-view="dashboard"]').click();
+  await navigateTo(page, "dashboard");
   await expect(page.locator("#balance")).toHaveText("-$20.50");
   const entries = await (await page.request.get(appURL + "/api/transactions")).json();
   const events = await (await page.request.get(appURL + "/api/transactions/" + entries.items[0].id + "/history")).json();
@@ -74,7 +74,7 @@ test("failed recovery leaves the deleted entry available", async ({ page, appURL
   });
   const entry = await response.json();
   await page.request.delete(appURL + "/api/transactions/" + entry.id);
-  await page.locator('nav [data-view="transactions"]').click();
+  await navigateTo(page, "transactions");
   await page.locator("#deleted-transactions-btn").click();
   await page.route("**/api/transactions/*/restore", route => route.fulfill({
     status: 400, contentType: "application/json", body: JSON.stringify({ detail: "Account is inactive" }),

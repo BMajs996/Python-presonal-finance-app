@@ -15,9 +15,10 @@
         <strong>Finance</strong>
         <span>Dashboard</span>
       </div>
+      <button class="mobile-nav-toggle" id="mobile-nav-toggle" type="button" aria-controls="primary-nav" aria-expanded="false">Menu</button>
     </div>
 
-    <nav>
+    <nav id="primary-nav" aria-label="Main navigation">
       <button class="nav-item active" data-view="dashboard">Overview</button>
       <button class="nav-item" data-view="transactions">Transactions</button>
       <button class="nav-item" data-view="recurring">Recurring</button>
@@ -179,7 +180,7 @@
         </div>
 
         <div class="table-wrap">
-          <table>
+          <table class="mobile-ledger">
             <thead>
               <tr>
                 <th>Date</th><th>Account</th><th>Category</th><th>Description</th>
@@ -202,7 +203,7 @@
           <button class="primary" id="add-recurring-btn">+ Add recurring</button>
         </div>
         <div class="table-wrap">
-          <table>
+          <table class="mobile-ledger">
             <thead>
               <tr><th>Category</th><th>Description</th><th>Account</th><th>Type</th><th>Amount</th><th>Frequency</th><th>Next date</th><th></th></tr>
             </thead>
@@ -235,7 +236,7 @@
           <button class="primary" id="add-transfer-btn">+ Transfer</button>
         </div>
         <div class="table-wrap">
-          <table>
+          <table class="mobile-ledger">
             <thead><tr><th>Date</th><th>From</th><th>To</th><th>Amount</th><th>Description</th><th></th></tr></thead>
             <tbody id="transfer-table"></tbody>
           </table>
@@ -347,14 +348,14 @@
             <button class="ghost" id="reconciliation-previous" type="button" disabled>Previous</button>
             <button class="ghost" id="reconciliation-next" type="button" disabled>Next</button>
           </div>
-          <div class="table-wrap"><table>
+          <div class="table-wrap"><table class="mobile-ledger">
             <thead><tr><th>Cleared</th><th>Date</th><th>Entry</th><th>Amount</th></tr></thead>
             <tbody id="reconciliation-entries"></tbody>
           </table></div>
         </section>
         <section class="statement-history">
           <h2>Statements</h2>
-          <div class="table-wrap"><table>
+          <div class="table-wrap"><table class="mobile-ledger">
             <thead><tr><th>Closing date</th><th>Status</th><th>Balance</th><th></th></tr></thead>
             <tbody id="reconciliation-history"></tbody>
           </table></div>

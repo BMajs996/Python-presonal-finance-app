@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.js";
+import { test, expect, navigateTo } from "./fixtures.js";
 import { parseCsv } from "../../frontend/utils/csv.js";
 
 test("legacy date and type payloads remain text in transaction and recurring tables", async ({ page }) => {
@@ -11,17 +11,17 @@ test("legacy date and type payloads remain text in transaction and recurring tab
   await page.route("**/api/recurring", route => route.fulfill({
     json: [{ ...item, next_date: malicious, frequency: malicious }],
   }));
-  await page.locator('nav [data-view="transactions"]').click();
+  await navigateTo(page, "transactions");
   await expect(page.locator("#transaction-table")).toContainText(malicious);
   await expect(page.locator("#transaction-table img")).toHaveCount(0);
-  await page.locator('nav [data-view="recurring"]').click();
+  await navigateTo(page, "recurring");
   await expect(page.locator("#recurring-table")).toContainText(malicious);
   await expect(page.locator("#recurring-table img")).toHaveCount(0);
   expect(await page.evaluate(() => window.injected)).toBeUndefined();
 });
 
 test("CSV distinguishes categories, neutralizes formulas and survives a lost import response", async ({ page, appURL }) => {
-  await page.locator('nav [data-view="transactions"]').click();
+  await navigateTo(page, "transactions");
   const csv = "date,type,category,amount,description,account_name\n"
     + '2026-01-01,expense,Food,12.34,=1+1,Main Account\n'
     + '2026-01-01,expense,Travel,12.34,=1+1,Main Account\n';
@@ -66,7 +66,7 @@ test("statement pagination preserves totals and clearing on later pages", async 
   await page.request.post(appURL + "/api/reconciliations", { data: {
     account_id: accounts[0].id, closing_date: "2020-01-31", closing_balance: "1.05",
   } });
-  await page.locator('nav [data-view="reconciliation"]').click();
+  await navigateTo(page, "reconciliation");
   await expect(page.locator("#reconciliation-entries input")).toHaveCount(100);
   await expect(page.locator("#reconciliation-entry-count")).toHaveText("0 / 105 cleared");
   await page.locator("#reconciliation-next").click();

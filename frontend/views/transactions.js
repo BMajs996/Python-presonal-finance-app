@@ -48,13 +48,13 @@ export async function loadTransactions() {
   transactionsCache = data.items;
   $("transaction-count").textContent = `${data.total} record${data.total === 1 ? "" : "s"}`;
   $("transaction-table").innerHTML = data.items.map((transaction) => `<tr>
-    <td>${escapeHtml(transaction.date)}</td>
-    <td>${escapeHtml(transaction.account_name || "Main Account")}</td>
-    <td>${escapeHtml(transaction.category)}</td>
-    <td>${escapeHtml(transaction.description || "")}</td>
-    <td class="${transactionClass(transaction.type)}">${escapeHtml(transaction.type)}</td>
-    <td class="amount ${transactionClass(transaction.type)}">${transaction.type === "income" ? "+" : "-"}${money(transaction.amount, transaction.currency)}</td>
-    <td><div class="row-actions">
+    <td data-label="Date">${escapeHtml(transaction.date)}</td>
+    <td data-label="Account">${escapeHtml(transaction.account_name || "Main Account")}</td>
+    <td data-label="Category">${escapeHtml(transaction.category)}</td>
+    <td data-label="Description">${escapeHtml(transaction.description || "")}</td>
+    <td data-label="Type" class="${transactionClass(transaction.type)}">${escapeHtml(transaction.type)}</td>
+    <td data-label="Amount" class="amount ${transactionClass(transaction.type)}">${transaction.type === "income" ? "+" : "-"}${money(transaction.amount, transaction.currency)}</td>
+    <td class="mobile-row-actions"><div class="row-actions">
       <button class="ghost" data-action="edit-transaction" data-id="${transaction.id}">Edit</button>
       <button class="ghost" data-action="transaction-history" data-id="${transaction.id}">History</button>
       <button class="ghost" data-action="delete-transaction" data-id="${transaction.id}">Delete</button>

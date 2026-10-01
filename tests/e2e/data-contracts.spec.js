@@ -1,9 +1,9 @@
-import { test, expect } from "./fixtures.js";
+import { test, expect, navigateTo } from "./fixtures.js";
 import { parseCsv } from "../../frontend/utils/csv.js";
 
 test("case-sensitive CSV identity agrees with budgets and reports while exact exports retain cents", async ({ page, appURL }) => {
   const policy = await (await page.request.get(appURL + "/api/ledger-policy")).json();
-  await page.locator('nav [data-view="transactions"]').click();
+  await navigateTo(page, "transactions");
   const lines = ["date,type,category,amount,description",
     ...["Food", "food", "FOOD", " Food "].map(category =>
       policy.business_date + ",expense," + category + ",2.00,Same purchase")];

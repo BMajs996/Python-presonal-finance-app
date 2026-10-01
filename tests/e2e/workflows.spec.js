@@ -1,8 +1,8 @@
-import { test, expect } from "./fixtures.js";
+import { test, expect, navigateTo } from "./fixtures.js";
 import { parseCsv } from "../../frontend/utils/csv.js";
 
 async function transactions(page) {
-  await page.locator('nav [data-view="transactions"]').click();
+  await navigateTo(page, "transactions");
   await expect(page.locator("#transactions-view")).toBeVisible();
 }
 
@@ -88,7 +88,7 @@ test("transfer creation and deletion preserve global totals and charts render lo
   const savings = await response.json();
   const accounts = await (await page.request.get(appURL + "/api/accounts")).json();
   const main = accounts.find(account => account.name === "Main Account");
-  await page.locator('nav [data-view="transfers"]').click();
+  await navigateTo(page, "transfers");
   await page.locator("#add-transfer-btn").click();
   await page.locator("#transfer-from").selectOption(String(savings.id));
   await page.locator("#transfer-to").selectOption(String(main.id));
@@ -100,7 +100,7 @@ test("transfer creation and deletion preserve global totals and charts render lo
   const after = await (await page.request.get(appURL + "/api/accounts")).json();
   expect(after.find(account => account.id === savings.id).balance).toBe(75);
   expect(after.find(account => account.id === main.id).balance).toBe(25);
-  await page.locator('nav [data-view="dashboard"]').click();
+  await navigateTo(page, "dashboard");
   await expect(page.locator("#balance")).toHaveText("$100.00");
   await expect(page.locator("#income")).toHaveText("$0.00");
   await expect(page.locator("#expenses")).toHaveText("$0.00");
@@ -110,10 +110,10 @@ test("transfer creation and deletion preserve global totals and charts render lo
       .some((value, index) => index % 4 === 3 && value > 0)
   )).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("dashboard.png"), fullPage: true });
-  await page.locator('nav [data-view="reports"]').click();
+  await navigateTo(page, "reports");
   await expect(page.locator("#report-income")).toHaveText("$0.00");
   await expect.poll(() => page.evaluate(() => Boolean(Chart.getChart("monthly-chart")))).toBe(true);
-  await page.locator('nav [data-view="transfers"]').click();
+  await navigateTo(page, "transfers");
   page.once("dialog", dialog => dialog.accept());
   await row.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(row).toHaveCount(0);
