@@ -13,14 +13,14 @@ export async function loadRecurring() {
   recurringCache = await listRecurring();
   $("recurring-table").innerHTML = recurringCache.length
     ? recurringCache.map((recurring) => `<tr>
-        <td>${escapeHtml(recurring.category)}</td>
-        <td>${escapeHtml(recurring.description || "")}</td>
-        <td>${escapeHtml(recurring.account_name || "Main Account")}</td>
-        <td class="${transactionClass(recurring.type)}">${escapeHtml(recurring.type)}</td>
-        <td class="amount ${transactionClass(recurring.type)}">${money(recurring.amount, recurring.currency)}</td>
-        <td>${escapeHtml(recurring.frequency)}</td>
-        <td>${escapeHtml(recurring.next_date)}</td>
-        <td><div class="row-actions">
+        <td data-label="Category">${escapeHtml(recurring.category)}</td>
+        <td data-label="Description">${escapeHtml(recurring.description || "")}</td>
+        <td data-label="Account">${escapeHtml(recurring.account_name || "Main Account")}</td>
+        <td data-label="Type" class="${transactionClass(recurring.type)}">${escapeHtml(recurring.type)}</td>
+        <td data-label="Amount" class="amount ${transactionClass(recurring.type)}">${money(recurring.amount, recurring.currency)}</td>
+        <td data-label="Frequency">${escapeHtml(recurring.frequency)}</td>
+        <td data-label="Next date">${escapeHtml(recurring.next_date)}</td>
+        <td class="mobile-row-actions"><div class="row-actions">
           <button class="ghost" data-action="edit-recurring" data-id="${recurring.id}">Edit</button>
           <button class="ghost" data-action="delete-recurring" data-id="${recurring.id}">Delete</button>
         </div></td>

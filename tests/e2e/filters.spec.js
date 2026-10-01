@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.js";
+import { test, expect, navigateTo } from "./fixtures.js";
 
 test("type, category and account dropdowns apply without clicking Filter", async ({ page, appURL }) => {
   const account = await (await page.request.post(appURL + "/api/accounts", {
@@ -14,7 +14,7 @@ test("type, category and account dropdowns apply without clicking Filter", async
     })).status()).toBe(201);
   }
   await page.reload();
-  await page.locator('nav [data-view="transactions"]').click();
+  await navigateTo(page, "transactions");
   await expect(page.locator("#transaction-count")).toHaveText("3 records");
   await page.locator("#type-filter").selectOption("expense");
   await expect(page.locator("#transaction-count")).toHaveText("2 records");
@@ -40,7 +40,7 @@ test("a delayed expense response cannot replace a newer income selection", async
       data: { date: "2026-09-25", amount: 10, type, category: type, description: type + " entry" },
     });
   }
-  await page.locator('nav [data-view="transactions"]').click();
+  await navigateTo(page, "transactions");
   await expect(page.locator("#transaction-count")).toHaveText("2 records");
   let release;
   let started;

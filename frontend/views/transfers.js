@@ -11,12 +11,12 @@ export async function loadTransfers() {
   const rows = await listTransfers();
   $("transfer-table").innerHTML = rows.length
     ? rows.map((transfer) => `<tr>
-        <td>${escapeHtml(transfer.date)}</td>
-        <td>${escapeHtml(transfer.from_account_name)}</td>
-        <td>${escapeHtml(transfer.to_account_name)}</td>
-        <td class="amount">${money(transfer.amount, transfer.currency)}</td>
-        <td>${escapeHtml(transfer.description || "")}</td>
-        <td><button class="ghost" data-action="delete-transfer" data-id="${transfer.id}">Delete</button></td>
+        <td data-label="Date">${escapeHtml(transfer.date)}</td>
+        <td data-label="From">${escapeHtml(transfer.from_account_name)}</td>
+        <td data-label="To">${escapeHtml(transfer.to_account_name)}</td>
+        <td data-label="Amount" class="amount">${money(transfer.amount, transfer.currency)}</td>
+        <td data-label="Description">${escapeHtml(transfer.description || "")}</td>
+        <td class="mobile-row-actions"><button class="ghost" data-action="delete-transfer" data-id="${transfer.id}">Delete</button></td>
       </tr>`).join("")
     : '<tr><td colspan="6">No transfers yet.</td></tr>';
 }

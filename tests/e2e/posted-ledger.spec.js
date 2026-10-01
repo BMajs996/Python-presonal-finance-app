@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.js";
+import { test, expect, navigateTo } from "./fixtures.js";
 
 test.use({ ledgerScenario: true });
 
@@ -7,11 +7,11 @@ test("legacy future entries are excluded everywhere and become posted once on th
   await expect(page.locator("#balance-context")).toHaveText("As of 2026-09-10");
   await expect(page.locator("#recent-transactions")).not.toContainText("Future");
   await expect(page.locator("#budget-list")).toContainText("$0.00");
-  await page.locator('nav [data-view="transactions"]').click();
+  await navigateTo(page, "transactions");
   await expect(page.locator("#transaction-count")).toHaveText("0 records");
-  await page.locator('nav [data-view="transfers"]').click();
+  await navigateTo(page, "transfers");
   await expect(page.locator("#transfer-table")).not.toContainText("Future transfer");
-  await page.locator('nav [data-view="reports"]').click();
+  await navigateTo(page, "reports");
   await expect(page.locator("#report-income")).toHaveText("$0.00");
   await expect(page.locator("#report-expenses")).toHaveText("$0.00");
   expect((await page.request.post(appURL + "/api/e2e/advance-business-day")).status()).toBe(200);
@@ -29,11 +29,11 @@ test("legacy future entries are excluded everywhere and become posted once on th
     const savings = page.locator("#account-list .account-card").filter({ hasText: "Savings" });
     await expect(main).toContainText("$50.00");
     await expect(savings).toContainText("$30.00");
-    await page.locator('nav [data-view="transactions"]').click();
+    await navigateTo(page, "transactions");
     await expect(page.locator("#transaction-count")).toHaveText("2 records");
-    await page.locator('nav [data-view="transfers"]').click();
+    await navigateTo(page, "transfers");
     await expect(page.locator("#transfer-table")).toContainText("Future transfer");
-    await page.locator('nav [data-view="reports"]').click();
+    await navigateTo(page, "reports");
     await expect(page.locator("#report-net")).toHaveText("$80.00");
     const data = await (await page.request.get(appURL + "/api/dashboard")).json();
     expect(data.balance_history.at(-1)).toEqual({ date: "2026-09-11", balance: 80,
@@ -43,7 +43,7 @@ test("legacy future entries are excluded everywhere and become posted once on th
 });
 
 test("future manual entries and CSV rows are rejected even when HTML limits are bypassed", async ({ page, appURL }) => {
-  await page.locator('nav [data-view="transactions"]').click();
+  await navigateTo(page, "transactions");
   for (const type of ["income", "expense"]) {
     await page.locator("#add-transaction-btn-2").click();
     await expect(page.locator("#form-date")).toHaveAttribute("max", "2026-09-10");
@@ -65,7 +65,7 @@ test("future manual entries and CSV rows are rejected even when HTML limits are 
   await expect(page.locator("#confirm-csv-import-btn")).toBeDisabled();
   await expect(page.locator("#csv-preview-table tr")).toHaveAttribute("title", /Future-dated/);
   await page.locator("#cancel-csv-import-btn").click();
-  await page.locator('nav [data-view="transfers"]').click();
+  await navigateTo(page, "transfers");
   await page.locator("#add-transfer-btn").click();
   await expect(page.locator("#transfer-date")).toHaveAttribute("max", "2026-09-10");
   await page.locator("#transfer-date").evaluate(input => input.removeAttribute("max"));

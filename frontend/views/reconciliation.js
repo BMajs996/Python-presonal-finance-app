@@ -40,12 +40,12 @@ function render(statement) {
   $("reconciliation-previous").disabled = pageIndex === 0;
   $("reconciliation-next").disabled = !statement.next_cursor;
   $("reconciliation-entries").innerHTML = statement.entries.map(row => `<tr>
-    <td><input type="checkbox" aria-label="Cleared ${escapeHtml(row.description || row.label)}"
+    <td data-label="Cleared"><input type="checkbox" aria-label="Cleared ${escapeHtml(row.description || row.label)}"
       data-kind="${row.kind}" data-id="${row.entry_id}" ${row.cleared ? "checked" : ""}
       ${statement.status === "completed" ? "disabled" : ""}></td>
-    <td>${escapeHtml(row.date)}</td>
-    <td>${escapeHtml(row.description || row.label)}<br><small>${escapeHtml(row.label)}</small></td>
-    <td class="amount ${row.amount_cents < 0 ? "expense" : "income"}">${money(row.amount_cents / 100, statement.currency)}</td>
+    <td data-label="Date">${escapeHtml(row.date)}</td>
+    <td data-label="Entry"><span>${escapeHtml(row.description || row.label)}<br><small>${escapeHtml(row.label)}</small></span></td>
+    <td data-label="Amount" class="amount ${row.amount_cents < 0 ? "expense" : "income"}">${money(row.amount_cents / 100, statement.currency)}</td>
   </tr>`).join("") || '<tr><td colspan="4">No entries.</td></tr>';
 }
 
@@ -53,9 +53,9 @@ async function history(accountId, token) {
   const rows = await listStatements(accountId);
   if (token !== requestId) return null;
   $("reconciliation-history").innerHTML = rows.map(row => `<tr>
-    <td>${escapeHtml(row.closing_date)}</td><td>${escapeHtml(row.status)}</td>
-    <td class="amount">${money(row.closing_balance_cents / 100, accounts.find(a => a.id === accountId)?.currency)}</td>
-    <td><button class="ghost" data-statement="${row.id}">${row.status === "draft" ? "Resume" : "View"}</button></td>
+    <td data-label="Closing date">${escapeHtml(row.closing_date)}</td><td data-label="Status">${escapeHtml(row.status)}</td>
+    <td data-label="Balance" class="amount">${money(row.closing_balance_cents / 100, accounts.find(a => a.id === accountId)?.currency)}</td>
+    <td class="mobile-row-actions"><button class="ghost" data-statement="${row.id}">${row.status === "draft" ? "Resume" : "View"}</button></td>
   </tr>`).join("") || '<tr><td colspan="4">No statements.</td></tr>';
   $("reconciliation-create").classList.toggle("hidden", rows.some(row => row.status === "draft"));
   $("reconciliation-create").querySelector("button").disabled = !accounts.some(a => a.id === accountId && a.active);

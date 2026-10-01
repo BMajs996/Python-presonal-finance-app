@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.js";
+import { test, expect, navigateTo } from "./fixtures.js";
 
 test("sign out, invalid sign in, sign in, and expired session", async ({ page, appURL }) => {
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
@@ -14,7 +14,7 @@ test("sign out, invalid sign in, sign in, and expired session", async ({ page, a
   await expect(page).toHaveURL(appURL + "/");
   await expect(page.locator("#account-list")).toContainText("Main Account");
   await page.context().clearCookies();
-  await page.getByRole("button", { name: "Transactions", exact: true }).click();
+  await navigateTo(page, "transactions");
   await expect(page).toHaveURL(appURL + "/login");
 });
 

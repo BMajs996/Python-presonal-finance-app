@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.js";
+import { test, expect, navigateTo } from "./fixtures.js";
 import { todayIso } from "../../frontend/utils/dates.js";
 
 test("saved draft, exact transfer totals and read-only statement history", async ({ page, appURL }, testInfo) => {
@@ -16,7 +16,7 @@ test("saved draft, exact transfer totals and read-only statement history", async
   await page.request.post(appURL + "/api/transfers", {
     data: { date: todayIso(), from_account_id: account.id, to_account_id: 1, amount: "20", description: "Savings transfer" },
   });
-  await page.locator('nav [data-view="reconciliation"]').click();
+  await navigateTo(page, "reconciliation");
   await page.locator("#reconciliation-account").selectOption(String(account.id));
   await page.locator("#reconciliation-balance").fill("117.66");
   await page.getByRole("button", { name: "Start reconciliation", exact: true }).click();
@@ -28,7 +28,7 @@ test("saved draft, exact transfer totals and read-only statement history", async
   await page.getByRole("checkbox", { name: "Cleared Deposit", exact: true }).check();
   await expect(page.locator("#reconciliation-difference")).toHaveText("-$32.34");
   await page.reload();
-  await page.locator('nav [data-view="reconciliation"]').click();
+  await navigateTo(page, "reconciliation");
   await page.locator("#reconciliation-account").selectOption(String(account.id));
   await expect(page.getByRole("checkbox", { name: "Cleared Deposit", exact: true })).toBeChecked();
   await page.getByRole("checkbox", { name: "Cleared <img", exact: false }).check();
@@ -43,7 +43,7 @@ test("saved draft, exact transfer totals and read-only statement history", async
   await expect(page.locator("#reconciliation-status")).toHaveText("Completed");
   await expect(page.getByRole("checkbox", { name: "Cleared Deposit", exact: true })).toBeDisabled();
   await page.reload();
-  await page.locator('nav [data-view="reconciliation"]').click();
+  await navigateTo(page, "reconciliation");
   await page.locator("#reconciliation-account").selectOption(String(account.id));
   await page.locator("#reconciliation-history").getByRole("button", { name: "View", exact: true }).click();
   await expect(page.locator("#reconciliation-cleared")).toHaveText("$117.66");
@@ -60,7 +60,7 @@ test("failed clear is reverted and discarded drafts release entries", async ({ p
   const entry = await (await page.request.post(appURL + "/api/transactions", {
     data: { date: todayIso(), type: "income", category: "Salary", amount: "10", description: "Retry entry" },
   })).json();
-  await page.locator('nav [data-view="reconciliation"]').click();
+  await navigateTo(page, "reconciliation");
   await page.locator("#reconciliation-balance").fill("10");
   await page.getByRole("button", { name: "Start reconciliation", exact: true }).click();
   const checkbox = page.getByRole("checkbox", { name: "Cleared Retry entry", exact: true });
