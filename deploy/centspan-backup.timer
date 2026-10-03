@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Centspan backup while this laptop is available
+
+[Timer]
+OnCalendar=*-*-* 19:00:00
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

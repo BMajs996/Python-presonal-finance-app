@@ -1,8 +1,8 @@
 # SEC-01: Single-host deployment contract
 
-**Status: reference configuration and local integration tests, not a verified live deployment.**
-No public domain/provider has been chosen. Do not mark SEC-01 fully closed until the
-external acceptance evidence below is recorded for the actual host.
+**Status: deployed at https://centspan.online on DigitalOcean; final acceptance is tracked
+in [security acceptance](security-acceptance.md).** Do not mark SEC-01 fully closed
+until the external acceptance evidence below is recorded for the actual host.
 
 ## Supported topology
 
