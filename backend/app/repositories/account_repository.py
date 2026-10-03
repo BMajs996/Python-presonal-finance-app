@@ -9,8 +9,17 @@ from .base_repository import BaseRepository
 
 class AccountRepository(BaseRepository):
     def list(self, include_inactive: bool = False):
-        where = "" if include_inactive else "WHERE a.active=1"
-        # The only interpolated fragment is the fixed active-account clause above.
+        return self._select(include_inactive=include_inactive)
+
+    def _select(self, *, include_inactive: bool = False, account_id: int | None = None):
+        conditions = [] if include_inactive else ["a.active=1"]
+        cutoff = business_date.today().isoformat()
+        params: list[str | int] = [cutoff] * 4
+        if account_id is not None:
+            conditions.append("a.id=?")
+            params.append(account_id)
+        where = "WHERE " + " AND ".join(conditions) if conditions else ""
+        # Interpolated clauses are fixed; account IDs remain bound parameters.
         account_sql = f"""
             SELECT a.id, a.name, a.type, a.currency, a.opening_balance_cents, a.active,
                    a.created_at,
@@ -31,15 +40,12 @@ class AccountRepository(BaseRepository):
             {where}
             ORDER BY a.active DESC, a.name
             """
-        cutoff = business_date.today().isoformat()
-        rows = self.conn.execute(account_sql, (cutoff, cutoff, cutoff, cutoff)).fetchall()
+        rows = self.conn.execute(account_sql, params).fetchall()
         return [self._to_domain(row).to_dict() for row in rows]
 
     def get(self, account_id: int):
-        return next(
-            (row for row in self.list(include_inactive=True) if row["id"] == account_id),
-            None,
-        )
+        accounts = self._select(include_inactive=True, account_id=account_id)
+        return accounts[0] if accounts else None
 
     def add(self, payload):
         name = payload.name.strip()

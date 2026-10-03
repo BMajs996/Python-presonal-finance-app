@@ -46,9 +46,13 @@ async function showView(view) {
 }
 
 async function refresh() {
-  await Promise.all([loadDashboard(), loadReferenceData()]);
+  const dashboard = loadDashboard();
+  const [data] = await Promise.all([
+    dashboard, loadReferenceData(dashboard.then((result) => result.accounts)),
+  ]);
   const visibleView = document.querySelector(".view:not(.hidden)")?.id.replace("-view", "");
-  if (visibleView && visibleView !== "dashboard") await viewLoaders[visibleView]?.();
+  if (visibleView === "accounts") await loadAccounts(data.accounts);
+  else if (visibleView && visibleView !== "dashboard") await viewLoaders[visibleView]?.();
 }
 
 function initNavigation() {

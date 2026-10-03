@@ -20,6 +20,7 @@ class TransactionRepository(BaseRepository):
         limit: int = 100,
         offset: int = 0,
         deleted: bool = False,
+        count_total: bool = True,
     ):
         query = """
             SELECT t.*, a.name AS account_name, a.currency AS account_currency
@@ -52,7 +53,7 @@ class TransactionRepository(BaseRepository):
 
         # Query fragments are fixed above and all request values remain bound parameters.
         count_sql = f"SELECT COUNT(*) FROM ({query})"
-        total = self.conn.execute(count_sql, params).fetchone()[0]
+        total = self.conn.execute(count_sql, params).fetchone()[0] if count_total else None
         query += " ORDER BY t.date DESC, t.id DESC LIMIT ? OFFSET ?"
         rows = self.conn.execute(query, [*params, limit, offset]).fetchall()
         items = [self._to_domain(row).to_dict() for row in rows]
@@ -60,6 +61,10 @@ class TransactionRepository(BaseRepository):
             for item, row in zip(items, rows, strict=True):
                 item["deleted_at"] = row["deleted_at"]
         return items, total
+
+    def recent(self, limit: int = 8):
+        items, _ = self.list(limit=limit, count_total=False)
+        return items
 
     def get(self, transaction_id: int, include_deleted: bool = False):
         row = self.conn.execute(

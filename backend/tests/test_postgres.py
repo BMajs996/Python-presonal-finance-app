@@ -21,6 +21,7 @@ from app.services.reconciliation_service import ReconciliationService
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
+from . import test_account_lookup as account_cases
 from . import test_api as api_cases
 from . import test_financial_invariants as invariant_cases
 from . import test_service_workflows as workflow_cases
@@ -42,6 +43,7 @@ def pg_repo(pg_url):
         invariant_cases.test_repository_persists_exact_cents,
         invariant_cases.test_base_currency_prevents_implicit_fx,
         workflow_cases.test_repository_missing_record_and_account_failure_paths,
+        account_cases.test_single_account_lookup_preserves_balance_and_inactive_access,
     ],
 )
 def test_repository_parity(pg_repo, case):

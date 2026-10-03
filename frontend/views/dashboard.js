@@ -51,6 +51,7 @@ export async function loadDashboard() {
   renderRecentTransactions(data.recent_transactions, $("recent-transactions"));
   renderBudgets(data.budgets, $("budget-list"));
   renderAccounts(data.accounts || [], $("account-list"));
+  return data;
 }
 
 export function initDashboardView() {
