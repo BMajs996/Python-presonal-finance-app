@@ -43,7 +43,7 @@ class ReportRepository(BaseRepository):
                 (self.base_currency, period.start_iso, period.end_iso),
             )
         ]
-        recent, _ = self.transactions.list(limit=8)
+        recent = self.transactions.recent(limit=8)
         income = Money(summary["income"], self.base_currency)
         expenses_total = Money(summary["expense"], self.base_currency)
         net = income - expenses_total

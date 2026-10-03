@@ -5,8 +5,8 @@ import { reportError, toast } from "../components/toast.js";
 import { $ } from "../utils/dom.js";
 import { getBaseCurrency } from "../utils/money.js";
 
-export async function loadAccounts() {
-  renderAccounts(await listAccounts(), $("accounts-full"));
+export async function loadAccounts(accountRows = null) {
+  renderAccounts(accountRows ?? await listAccounts(), $("accounts-full"));
 }
 
 function openAccountModal() {

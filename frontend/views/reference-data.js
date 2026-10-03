@@ -11,10 +11,12 @@ export function getAccounts() {
   return accounts;
 }
 
-export async function loadReferenceData() {
+export async function loadReferenceData(accountRowsPromise = null) {
   const selectedCategory = $("category-filter").value;
   const selectedAccount = $("account-filter").value;
-  const [categories, accountRows, policy] = await Promise.all([getCategories(), listAccounts(), getLedgerPolicy()]);
+  const [categories, accountRows, policy] = await Promise.all([
+    getCategories(), accountRowsPromise ?? listAccounts(), getLedgerPolicy(),
+  ]);
   setBusinessDate(policy.business_date);
   accounts = accountRows;
   const mainAccount = accounts.find((account) => account.name === "Main Account");
