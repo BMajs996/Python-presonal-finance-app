@@ -1,0 +1,10 @@
+[Unit]
+Description=Stream and verify an encrypted Centspan backup on this laptop
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/centspan-backup.env
+ExecStart=/usr/bin/bash %h/Documents/finance-dashboard/deploy/backup-to-laptop.sh
+UMask=0077
+TimeoutStartSec=30min
+NoNewPrivileges=true
