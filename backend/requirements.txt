@@ -1,7 +1,7 @@
-fastapi==0.142.1
+fastapi==0.142.2
 uvicorn[standard]==0.54.0
 pydantic==2.13.5
 pydantic-settings==2.15.0
 psycopg[binary]==3.3.6
 argon2-cffi==25.1.0
-python-dotenv==1.2.3
+python-dotenv==1.2.4
