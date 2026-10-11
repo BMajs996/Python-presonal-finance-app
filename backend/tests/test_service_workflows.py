@@ -1,7 +1,8 @@
-from datetime import date, timedelta
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
+from app.domain import business_date
 from app.migrations import LATEST_SCHEMA_VERSION, migrate
 from app.repositories.base_repository import BaseRepository
 from app.schemas import (
@@ -14,10 +15,11 @@ from app.schemas import (
 )
 
 
+@business_date.snapshot()
 def test_finance_service_transaction_and_budget_workflows(finance_service):
     transaction = finance_service.create_transaction(
         TransactionCreate(
-            date=date.today(),
+            date=business_date.today(),
             type="expense",
             category="Food",
             amount="12.50",
@@ -34,7 +36,7 @@ def test_finance_service_transaction_and_budget_workflows(finance_service):
     updated = finance_service.update_transaction(
         transaction["id"],
         TransactionCreate(
-            date=date.today(),
+            date=business_date.today(),
             type="expense",
             category="Groceries",
             amount="20.00",
@@ -54,6 +56,7 @@ def test_finance_service_transaction_and_budget_workflows(finance_service):
     assert finance_service.budgets() == []
 
 
+@business_date.snapshot()
 def test_finance_service_account_transfer_and_recurring_workflows(finance_service):
     checking = finance_service.create_account(AccountCreate(name="Checking"))
     savings = finance_service.create_account(AccountCreate(name="Savings", type="savings"))
@@ -66,7 +69,7 @@ def test_finance_service_account_transfer_and_recurring_workflows(finance_servic
 
     transfer = finance_service.create_transfer(
         TransferCreate(
-            date=date.today(),
+            date=business_date.today(),
             from_account_id=checking["id"],
             to_account_id=savings["id"],
             amount="25.00",
@@ -83,7 +86,7 @@ def test_finance_service_account_transfer_and_recurring_workflows(finance_servic
             category="Allowance",
             amount="10.00",
             frequency="daily",
-            start_date=date.today() - timedelta(days=1),
+            start_date=business_date.today() - timedelta(days=1),
             account_id=checking["id"],
         )
     )
@@ -95,7 +98,7 @@ def test_finance_service_account_transfer_and_recurring_workflows(finance_servic
             category="Allowance",
             amount="15.00",
             frequency="daily",
-            next_date=date.today(),
+            next_date=business_date.today(),
             account_id=checking["id"],
         ),
     )
@@ -118,7 +121,7 @@ def test_repository_missing_record_and_account_failure_paths(db):
     assert (
         db.update_transaction(
             99999,
-            TransactionCreate(date=date.today(), type="expense", category="Food", amount=1),
+            TransactionCreate(date=business_date.today(), type="expense", category="Food", amount=1),
         )
         is None
     )
@@ -131,7 +134,7 @@ def test_repository_missing_record_and_account_failure_paths(db):
                 category="Rent",
                 amount=1,
                 frequency="monthly",
-                next_date=date.today(),
+                next_date=business_date.today(),
             ),
         )
         is None

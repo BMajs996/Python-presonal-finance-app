@@ -1,10 +1,11 @@
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, timedelta
+from datetime import timedelta
 from threading import Barrier
 
 import pytest
 from app.database import FinanceDatabase
+from app.domain import business_date
 from app.domain.errors import Conflict, InvalidOperation, NotFound
 from app.migrations import migrate
 from app.reconciliation_schemas import ClearedEntry, StatementCreate
@@ -25,7 +26,7 @@ def entry(db, amount="12.34", **changes):
     return db.add_transaction(
         TransactionCreate(
             **{
-                "date": date.today(),
+                "date": business_date.today(),
                 "type": "income",
                 "category": "Salary",
                 "amount": amount,
@@ -39,7 +40,7 @@ def start(service, balance="0", account_id=1, closing_date=None):
     return service.create(
         StatementCreate(
             account_id=account_id,
-            closing_date=closing_date or date.today(),
+            closing_date=closing_date or business_date.today(),
             closing_balance=balance,
         )
     )
@@ -94,7 +95,7 @@ def test_transfer_clears_independently_on_both_accounts(db, service):
     savings = db.add_account(AccountCreate(name="Savings", opening_balance="100"))
     transfer = db.add_transfer(
         TransferCreate(
-            date=date.today(),
+            date=business_date.today(),
             from_account_id=savings["id"],
             to_account_id=1,
             amount="25",
@@ -115,7 +116,7 @@ def test_transfer_clears_independently_on_both_accounts(db, service):
 
 
 def test_outstanding_older_entries_carry_forward_without_double_counting(db, service):
-    yesterday = date.today() - timedelta(days=1)
+    yesterday = business_date.today() - timedelta(days=1)
     first = entry(db, "10", date=yesterday)
     outstanding = entry(db, "2", date=yesterday)
     draft = start(service, "10", closing_date=yesterday)
@@ -131,7 +132,7 @@ def test_outstanding_older_entries_carry_forward_without_double_counting(db, ser
 def test_deleted_future_and_other_account_entries_are_ineligible(db, service):
     removed = entry(db)
     db.delete_transaction(removed["id"])
-    future = entry(db, date=date.today() + timedelta(days=1))
+    future = entry(db, date=business_date.today() + timedelta(days=1))
     other_account = db.add_account(AccountCreate(name="Other"))
     other = entry(db, account_id=other_account["id"])
     draft = start(service)
@@ -148,14 +149,15 @@ def test_negative_opening_and_empty_statement(db, service):
     assert service.complete(draft["id"])["entries"] == []
 
 
+@business_date.snapshot()
 def test_dates_duplicate_drafts_and_inactive_accounts(db, service):
     with pytest.raises(InvalidOperation, match="future"):
-        start(service, closing_date=date.today() + timedelta(days=1))
+        start(service, closing_date=business_date.today() + timedelta(days=1))
     draft = start(service)
     with pytest.raises(Conflict, match="already"):
         start(service)
     service.complete(draft["id"])
-    for day in (date.today(), date.today() - timedelta(days=1)):
+    for day in (business_date.today(), business_date.today() - timedelta(days=1)):
         with pytest.raises(InvalidOperation, match="after"):
             start(service, closing_date=day)
     account = db.add_account(AccountCreate(name="Inactive"))
