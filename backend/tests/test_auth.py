@@ -2,6 +2,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
+from app.core.auth_middleware import PUBLIC_HEALTH_PATHS
 from app.core.config import Settings, settings
 from app.main import app
 from app.services.auth_service import COOKIE, AuthService, token_hash
@@ -24,7 +25,7 @@ def raw_client(request, tmp_path, monkeypatch):
 def test_all_financial_routes_require_owner(raw_client):
     checked = 0
     for path, operations in app.openapi()["paths"].items():
-        if not path.startswith("/api/") or path == "/api/health" or path.startswith("/api/auth/"):
+        if not path.startswith("/api/") or path in PUBLIC_HEALTH_PATHS or path.startswith("/api/auth/"):
             continue
         for method in operations:
             if method.upper() not in {"GET", "POST", "PUT", "DELETE"}:

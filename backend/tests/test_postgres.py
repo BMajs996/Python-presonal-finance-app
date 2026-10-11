@@ -24,6 +24,7 @@ from pydantic import SecretStr
 from . import test_account_lookup as account_cases
 from . import test_api as api_cases
 from . import test_financial_invariants as invariant_cases
+from . import test_recurring_processing as recurring_cases
 from . import test_service_workflows as workflow_cases
 from .postgres_helpers import pg_url as pg_url
 
@@ -44,6 +45,7 @@ def pg_repo(pg_url):
         invariant_cases.test_base_currency_prevents_implicit_fx,
         workflow_cases.test_repository_missing_record_and_account_failure_paths,
         account_cases.test_single_account_lookup_preserves_balance_and_inactive_access,
+        recurring_cases.test_cooperative_stop_preserves_claims_and_can_resume,
     ],
 )
 def test_repository_parity(pg_repo, case):

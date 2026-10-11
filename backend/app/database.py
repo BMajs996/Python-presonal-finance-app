@@ -1,9 +1,10 @@
 import sqlite3
+import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 
-from .migrations import migrate
+from .migrations import LATEST_SCHEMA_VERSION, migrate
 
 
 class FinanceDatabase:
@@ -99,3 +100,14 @@ class FinanceDatabase:
 
     def close(self):
         self.conn.close()
+
+    def check_ready(self) -> bool:
+        from .services.health_service import SCHEMA_PROBE
+
+        deadline = time.monotonic() + 2
+        uri = Path(self.db_path).resolve().as_uri() + "?mode=ro"
+        with closing(sqlite3.connect(uri, uri=True, timeout=2)) as connection:
+            connection.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+            connection.execute("PRAGMA query_only=ON")
+            row = connection.execute(SCHEMA_PROBE.format(migration_table="schema_migrations")).fetchone()
+            return row is not None and row[0] == self.base_currency and row[1] == LATEST_SCHEMA_VERSION

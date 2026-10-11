@@ -177,6 +177,29 @@ def counters(stack):
         return dict(conn.execute("SELECT source_key,attempts FROM auth_source_limits").fetchall())
 
 
+def test_operational_probes_through_real_tls_proxy(proxy_stack):
+    client = next(iter(proxy_stack["clients"].values()))
+    before = counters(proxy_stack)
+    for path in ("/api/health", "/api/health/ready", "/api/health/worker"):
+        response = client.get(path, headers={"X-Forwarded-Proto": "http", "X-Forwarded-For": "192.0.2.99"})
+        assert response.status_code == 200
+        assert response.json()["status"] in {"ok", "starting"}
+        assert set(response.json()) == {"status"}
+        assert response.headers["cache-control"] == "no-store"
+    assert counters(proxy_stack) == before
+    assert client.get("/api/operations/health").status_code == 401
+    assert client.get("/api/health/worker/private").status_code == 401
+    monitor = subprocess.run(
+        [sys.executable, "-m", "backend.app.operations_check", "--url", proxy_stack["origin"]],
+        env={**os.environ, "SSL_CERT_FILE": str(proxy_stack["db"].parent / "certificate.pem")},
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert monitor.returncode == 0, monitor.stderr
+    assert set(json.loads(monitor.stdout).values()) <= {"ok", "starting"}
+
+
 def test_real_tls_proxy_authentication_and_spoof_resistance(proxy_stack):
     stack = proxy_stack
     first, second = stack["clients"].values()

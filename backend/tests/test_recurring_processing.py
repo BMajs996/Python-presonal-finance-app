@@ -83,6 +83,23 @@ def test_inactive_schedule_is_not_processed(db):
     assert db.recurring_transactions.process_due(date(2026, 4, 1)) == 0
 
 
+def test_cooperative_stop_preserves_claims_and_can_resume(db):
+    schedule = add_schedule(db)
+    checks = 0
+
+    def should_stop():
+        nonlocal checks
+        checks += 1
+        return checks >= 4
+
+    through = date(2026, 5, 1)
+    assert db.recurring_transactions.process_due(through, should_stop=should_stop) == 2
+    assert db.recurring_transactions.get(schedule["id"])["next_date"] == "2026-04-01"
+    assert db.recurring_transactions.process_due(through) == 2
+    assert db.recurring_transactions.process_due(through) == 0
+    assert db.list_transactions()[1] == 4
+
+
 def test_processing_rejects_an_existing_transaction(db):
     db.database.conn.execute("BEGIN IMMEDIATE")
     try:
@@ -124,7 +141,7 @@ def test_command_retries_without_duplicates(db, capsys):
 def test_runner_retries_errors_and_stops_cleanly(db, monkeypatch):
     calls = []
 
-    def process(database):
+    def process(database, **kwargs):
         calls.append(database)
         if len(calls) == 1:
             raise sqlite3.OperationalError("locked")
