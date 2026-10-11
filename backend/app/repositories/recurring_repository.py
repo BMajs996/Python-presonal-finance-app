@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 from datetime import date
 
 from ..domain import business_date
@@ -11,6 +12,13 @@ logger = logging.getLogger(__name__)
 
 
 class RecurringRepository(BaseRepository):
+    def oldest_due(self, through: date) -> date | None:
+        row = self.conn.execute(
+            "SELECT MIN(next_date) AS oldest FROM recurring_transactions WHERE active=1 AND next_date<=?",
+            (through.isoformat(),),
+        ).fetchone()
+        return date.fromisoformat(row["oldest"]) if row["oldest"] else None
+
     def list(self):
         return [
             self._serialize(row)
@@ -102,7 +110,7 @@ class RecurringRepository(BaseRepository):
             )
 
     @business_date.snapshot()
-    def process_due(self, through: date | None = None):
+    def process_due(self, through: date | None = None, *, should_stop: Callable[[], bool] | None = None):
         through = through or business_date.today()
         business_date.require_posted(through)
         if self.conn.in_transaction:
@@ -113,6 +121,8 @@ class RecurringRepository(BaseRepository):
             (through.isoformat(),),
         ).fetchall()
         for schedule in schedules:
+            if should_stop is not None and should_stop():
+                break
             with self.conn:
                 # Re-read under the writer lock; another worker may already have advanced it.
                 self.conn.execute("BEGIN IMMEDIATE")
@@ -135,6 +145,8 @@ class RecurringRepository(BaseRepository):
                 occurrence = date.fromisoformat(row["next_date"])
                 guard = 0
                 while occurrence <= through and guard < BATCH_SIZE:
+                    if should_stop is not None and should_stop():
+                        break
                     claim = self.conn.execute(
                         """
                         INSERT INTO recurring_occurrences(recurring_id, due_date) VALUES (?, ?)

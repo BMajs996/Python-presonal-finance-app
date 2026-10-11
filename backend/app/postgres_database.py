@@ -4,6 +4,7 @@ from pathlib import Path
 
 import psycopg
 from psycopg import sql
+from psycopg.conninfo import conninfo_to_dict
 
 from .postgres_connection import WRITE_LOCK, PostgresConnection, record_factory
 
@@ -97,3 +98,15 @@ class PostgresDatabase:
 
     def close(self):
         self.conn.close()
+
+    def check_ready(self) -> bool:
+        from .services.health_service import SCHEMA_PROBE
+
+        # Preserve URL options such as the isolated test-schema search_path.
+        options = str(conninfo_to_dict(self._url).get("options") or "")
+        options += " -c statement_timeout=2000 -c lock_timeout=2000 -c default_transaction_read_only=on"
+        with psycopg.connect(self._url, connect_timeout=2, options=options, autocommit=True) as connection:
+            row = connection.execute(
+                SCHEMA_PROBE.format(migration_table="postgres_schema_migrations")
+            ).fetchone()
+            return row is not None and row[0] == self.base_currency and row[1] == SCHEMA_VERSION

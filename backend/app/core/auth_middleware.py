@@ -10,6 +10,8 @@ from ..domain import business_date
 from ..services.auth_service import COOKIE, AuthService
 from .config import settings
 
+PUBLIC_HEALTH_PATHS = frozenset({"/api/health", "/api/health/ready", "/api/health/worker"})
+
 
 class ConfiguredCORS:
     """Use the explicit configured allowlist, including in isolated app tests."""
@@ -49,7 +51,9 @@ class OwnerAccessMiddleware(BaseHTTPMiddleware):
         if settings.environment == "production" and request.url.scheme != "https":
             return JSONResponse({"detail": "HTTPS required"}, status_code=400)
         path = request.url.path
-        protected = (path.startswith("/api/") and path not in {"/api/health", "/api/auth/login"}) or path in {
+        protected = (
+            path.startswith("/api/") and path not in PUBLIC_HEALTH_PATHS and path != "/api/auth/login"
+        ) or path in {
             "/",
             "/docs",
             "/docs/oauth2-redirect",
@@ -79,7 +83,7 @@ class OwnerAccessMiddleware(BaseHTTPMiddleware):
                 request.state.owner_session = session
         if response is None:
             response = await call_next(request)
-        if protected or path.startswith("/api/auth/") or path == "/login":
+        if protected or path in PUBLIC_HEALTH_PATHS or path.startswith("/api/auth/") or path == "/login":
             response.headers["Cache-Control"] = "no-store"
         elif path.startswith("/assets/"):
             response.headers["Cache-Control"] = "no-cache"

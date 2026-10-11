@@ -1,0 +1,15 @@
+[Unit]
+Description=Finance application, database and recurring worker health check
+# Add OnFailure=your-reviewed-notification.service to deliver external alerts.
+
+[Service]
+Type=oneshot
+User=finance
+Group=finance
+WorkingDirectory=/opt/finance-dashboard
+ExecStart=/opt/finance-dashboard/.venv/bin/python -m backend.app.operations_check --url https://finance.example.com
+TimeoutStartSec=20
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true

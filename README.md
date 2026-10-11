@@ -299,8 +299,16 @@ validation errors, and database constraint details are not exposed in conflict m
 
 ## Recurring processing
 
+Operational worker tracking, readiness probes and monitoring are documented in
+[OPS-01 / OPS-02 operations](docs/operations.md). `/api/health` remains liveness
+only; `/api/health/ready` and `/api/health/worker` expose minimal public statuses.
+Owner-only details are available at `/api/operations/health`. No database migration
+is required for these additions.
+
 While the server is running, a background task processes due recurring entries immediately and every
-60 seconds thereafter. It uses a separate connection and retries failures on the next interval.
+60 seconds thereafter. It uses a separate connection and retries failures with bounded
+exponential backoff (60 to 300 seconds by default), resetting to the normal interval
+after success.
 Shutdown waits for an active processing pass to finish. Multiple workers can run safely: each pass
 locks before reading schedules, and migration 3 adds a unique occurrence ledger keyed by schedule and
 due date. The ledger, generated entries, and schedule advancement commit together or roll back together.

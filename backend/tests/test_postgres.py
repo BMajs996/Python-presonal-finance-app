@@ -1,13 +1,14 @@
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
-from datetime import date, timedelta
+from datetime import timedelta
 from pathlib import Path
 from threading import Barrier
 
 import psycopg
 import pytest
 from app.core.config import settings
+from app.domain import business_date
 from app.domain.errors import Conflict
 from app.main import app
 from app.postgres_database import PostgresDatabase
@@ -24,6 +25,7 @@ from pydantic import SecretStr
 from . import test_account_lookup as account_cases
 from . import test_api as api_cases
 from . import test_financial_invariants as invariant_cases
+from . import test_recurring_processing as recurring_cases
 from . import test_service_workflows as workflow_cases
 from .postgres_helpers import pg_url as pg_url
 
@@ -44,6 +46,7 @@ def pg_repo(pg_url):
         invariant_cases.test_base_currency_prevents_implicit_fx,
         workflow_cases.test_repository_missing_record_and_account_failure_paths,
         account_cases.test_single_account_lookup_preserves_balance_and_inactive_access,
+        recurring_cases.test_cooperative_stop_preserves_claims_and_can_resume,
     ],
 )
 def test_repository_parity(pg_repo, case):
@@ -92,14 +95,16 @@ def test_api_parity(pg_url, monkeypatch, case):
         case(client)
 
 
+@business_date.snapshot()
 def test_concurrent_recurring_and_restore(pg_repo):
+    today = business_date.today()
     pg_repo.add_recurring(
         RecurringCreate(
             type="expense",
             category="Rent",
             amount="10.25",
             frequency="daily",
-            start_date=date.today() - timedelta(days=3),
+            start_date=today - timedelta(days=3),
         )
     )
     barrier = Barrier(3)
@@ -108,7 +113,7 @@ def test_concurrent_recurring_and_restore(pg_repo):
         with pg_repo.database.connection() as connection:
             repository = FinanceRepository(pg_repo.database, connection=connection)
             barrier.wait(timeout=5)
-            return repository.recurring_transactions.process_due()
+            return repository.recurring_transactions.process_due(through=today)
 
     with ThreadPoolExecutor(max_workers=3) as pool:
         futures = [pool.submit(process) for _ in range(3)]
@@ -142,7 +147,7 @@ def test_concurrent_recurring_and_restore(pg_repo):
 def test_money_and_audit_guards(pg_repo, statement):
     transaction = pg_repo.add_transaction(
         TransactionCreate(
-            date=date.today(),
+            date=business_date.today(),
             type="income",
             category="Salary",
             amount="12.34",
@@ -157,7 +162,7 @@ def test_money_and_audit_guards(pg_repo, statement):
 def populate(db):
     first = db.add_transaction(
         TransactionCreate(
-            date=date.today(),
+            date=business_date.today(),
             type="income",
             category="Salary",
             amount="100",
@@ -165,7 +170,7 @@ def populate(db):
     )
     deleted = db.add_transaction(
         TransactionCreate(
-            date=date.today(),
+            date=business_date.today(),
             type="expense",
             category="Food",
             amount="12.34",
@@ -175,7 +180,7 @@ def populate(db):
     account = db.add_account(AccountCreate(name="Savings", opening_balance="-1.25"))
     db.add_transfer(
         TransferCreate(
-            date=date.today(),
+            date=business_date.today(),
             from_account_id=1,
             to_account_id=account["id"],
             amount="25",
@@ -188,12 +193,14 @@ def populate(db):
             category="Allowance",
             amount="0.10",
             frequency="daily",
-            start_date=date.today() - timedelta(days=2),
+            start_date=business_date.today() - timedelta(days=2),
         )
     )
     db.recurring_transactions.process_due()
     service = ReconciliationService(ReconciliationRepository(db.conn))
-    draft = service.create(StatementCreate(account_id=1, closing_date=date.today(), closing_balance="100"))
+    draft = service.create(
+        StatementCreate(account_id=1, closing_date=business_date.today(), closing_balance="100")
+    )
     service.clear(draft["id"], ClearedEntry(kind="transaction", entry_id=first["id"], cleared=True))
     service.complete(draft["id"])
     return first, deleted, draft
@@ -228,7 +235,7 @@ def test_transfer_dry_run_commit_verification_and_rerun_refusal(pg_url, db):
             service.cancel(draft["id"])
         created = repo.add_transaction(
             TransactionCreate(
-                date=date.today(),
+                date=business_date.today(),
                 type="income",
                 category="New",
                 amount="0.20",

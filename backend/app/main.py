@@ -9,6 +9,7 @@ from .api import (
     auth,
     budgets,
     dashboard,
+    operations,
     reconciliation,
     recurring,
     reports,
@@ -22,7 +23,9 @@ from .database_factory import open_database
 from .frontend_assets import frontend_page, frontend_revision
 from .schemas import HealthResponse
 from .services.auth_service import initialize_auth
+from .services.health_service import ReadinessProbe
 from .services.recurring_runner import run_recurring
+from .services.worker_health import WorkerHealth
 
 
 @asynccontextmanager
@@ -31,8 +34,23 @@ async def lifespan(app: FastAPI):
     initialize_auth(database)
     database.close()
     app.state.database = database
+    app.state.readiness = ReadinessProbe(database)
+    app.state.worker_health = WorkerHealth(
+        stale_seconds=settings.recurring_stale_seconds,
+        failure_threshold=settings.recurring_failure_threshold,
+        lag_days=settings.recurring_lag_days,
+    )
     stop = asyncio.Event()
-    runner = asyncio.create_task(run_recurring(database, stop))
+    runner = asyncio.create_task(
+        run_recurring(
+            database,
+            stop,
+            settings.recurring_interval_seconds,
+            max_backoff=settings.recurring_max_backoff_seconds,
+            health=app.state.worker_health,
+        )
+    )
+    app.state.recurring_task = runner
     try:
         yield
     finally:
@@ -55,6 +73,7 @@ app.add_middleware(OwnerAccessMiddleware)
 app.add_middleware(ConfiguredCORS)
 app.add_middleware(ConfiguredHosts)
 app.include_router(auth.router)
+app.include_router(operations.router)
 
 app.include_router(dashboard.router)
 app.include_router(accounts.router)
