@@ -5,6 +5,10 @@ import psycopg
 INTEGRITY_ERRORS = (sqlite3.IntegrityError, psycopg.IntegrityError)
 
 
+class DatabaseCapacityError(TimeoutError):
+    """The bounded database pool cannot serve this operation now."""
+
+
 def is_unique_violation(error) -> bool:
     return (
         isinstance(error, psycopg.errors.UniqueViolation)

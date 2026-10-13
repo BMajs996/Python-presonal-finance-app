@@ -8,6 +8,7 @@ from ..domain.recurrence import calculate_next_date
 from .base_repository import BaseRepository
 
 BATCH_SIZE = 100
+SCHEDULE_BATCH_SIZE = 100
 logger = logging.getLogger(__name__)
 
 
@@ -117,8 +118,9 @@ class RecurringRepository(BaseRepository):
             raise RuntimeError("Recurring processing requires its own transaction")
         created = 0
         schedules = self.conn.execute(
-            "SELECT id FROM recurring_transactions WHERE active=1 AND next_date<=? ORDER BY next_date,id",
-            (through.isoformat(),),
+            "SELECT id FROM recurring_transactions WHERE active=1 AND next_date<=? "
+            "ORDER BY next_date,id LIMIT ?",
+            (through.isoformat(), SCHEDULE_BATCH_SIZE),
         ).fetchall()
         for schedule in schedules:
             if should_stop is not None and should_stop():

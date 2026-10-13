@@ -189,6 +189,11 @@ on both SQLite and PostgreSQL. `Main Account` cannot be deactivated.
 
 ## Database migrations
 
+For a disposable 100,000-row local performance baseline, see [benchmark instructions](docs/benchmark.md).
+
+See [database query and capacity improvements](docs/database-performance.md) for
+CSV query budgets, index upgrades and bounded PostgreSQL connection settings.
+
 Schema migrations are tracked in `schema_migrations`. On startup the application upgrades older databases automatically. Migration 1 creates accounts/transfers and assigns legacy records to `Main Account`. Migration 2 adds and backfills integer-cent columns for every monetary field without deleting the legacy values.
 
 For safety, keep `data/*.db` out of Git. The repository contains no personal financial data.
@@ -441,6 +446,7 @@ switching back would lose those changes; reconcile/export them first.
 
 PostgreSQL schema versions are tracked separately in `postgres_schema_migrations`.
 Version 1 implements SQLite schema 6 semantics. The historical SQLite migration ledger is preserved.
+Version 2 adds query indexes and upgrades existing version-1 databases transactionally.
 PostgreSQL uses BIGINT cents, foreign keys, money constraints, and audit/reconciliation triggers.
 An advisory transaction lock currently serializes writers to preserve existing financial invariants.
 This is deliberately conservative, not a claim of high write scalability.
@@ -573,7 +579,7 @@ the external checks below still require a real hosting target.
   NaN, infinity and excessive magnitudes are rejected before cent conversion.
   Computed totals are not restricted by this per-entry limit. Statement balances retain
   their separate +/-90,000,000,000,000.00 limit because they represent aggregates.
-- Recurring processing commits at most 100 occurrences per schedule per pass, then visits
+- Recurring processing visits at most 100 schedules and commits at most 100 occurrences per schedule per pass, then visits
   the next schedule. Remaining backlog is processed on later scheduled/manual passes.
   Occurrence uniqueness and atomic per-schedule batches prevent duplicate or partial batches.
   Recurring start/next dates must be between 1900-01-01 and 9998-12-31.
@@ -617,8 +623,8 @@ the external checks below still require a real hosting target.
    Review any legacy malformed dates/types before introducing stricter database guards.
 5. Run a backup/restore drill and compare balances, reports, history and reconciliations
    on an isolated restored database. Rotate owner credentials before exposing a restored app.
-6. Measure connection counts and query plans on deployment-sized data. PostgreSQL still uses
-   per-operation connections; a bounded pool remains a capacity improvement to evaluate.
+6. Measure connection counts and query plans on deployment-sized data. PostgreSQL uses
+   a bounded pool; size each process's connections and queue for the server's capacity.
    Statement history itself remains unpaginated; ledger entry pages are bounded.
 
 

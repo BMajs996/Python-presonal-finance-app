@@ -14,30 +14,38 @@ class AccountRepository(BaseRepository):
     def _select(self, *, include_inactive: bool = False, account_id: int | None = None):
         conditions = [] if include_inactive else ["a.active=1"]
         cutoff = business_date.today().isoformat()
-        params: list[str | int] = [cutoff] * 4
+        params: list[str | int] = []
         if account_id is not None:
             conditions.append("a.id=?")
             params.append(account_id)
         where = "WHERE " + " AND ".join(conditions) if conditions else ""
+        params.extend([cutoff] * 3)
         # Interpolated clauses are fixed; account IDs remain bound parameters.
         account_sql = f"""
+            WITH selected_accounts AS (
+                SELECT a.* FROM accounts a {where}
+            ), transaction_totals AS (
+                SELECT t.account_id,
+                       SUM(CASE WHEN t.type='income' THEN t.amount_cents ELSE -t.amount_cents END) net_cents,
+                       COUNT(*) transaction_count
+                FROM transactions t
+                WHERE t.deleted_at IS NULL AND t.date<=?
+                  AND t.account_id IN (SELECT id FROM selected_accounts)
+                GROUP BY t.account_id
+            )
             SELECT a.id, a.name, a.type, a.currency, a.opening_balance_cents, a.active,
                    a.created_at,
                    a.opening_balance_cents
-                   + COALESCE((
-                       SELECT SUM(CASE WHEN t.type='income' THEN t.amount_cents ELSE -t.amount_cents END)
-                       FROM transactions t WHERE t.account_id=a.id AND t.deleted_at IS NULL AND t.date<=?
-                   ), 0)
+                   + COALESCE(totals.net_cents, 0)
                    + COALESCE((
                        SELECT SUM(t.amount_cents) FROM transfers t WHERE t.to_account_id=a.id AND t.date<=?
                    ), 0)
                    - COALESCE((
                        SELECT SUM(t.amount_cents) FROM transfers t WHERE t.from_account_id=a.id AND t.date<=?
                    ), 0) AS balance_cents,
-                   (SELECT COUNT(*) FROM transactions t
-                    WHERE t.account_id=a.id AND t.deleted_at IS NULL AND t.date<=?) AS transaction_count
-            FROM accounts a
-            {where}
+                   COALESCE(totals.transaction_count,0) AS transaction_count
+            FROM selected_accounts a
+            LEFT JOIN transaction_totals totals ON totals.account_id=a.id
             ORDER BY a.active DESC, a.name
             """
         rows = self.conn.execute(account_sql, params).fetchall()

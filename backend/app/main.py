@@ -31,8 +31,12 @@ from .services.worker_health import WorkerHealth
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database = open_database(settings)
-    initialize_auth(database)
-    database.close()
+    try:
+        initialize_auth(database)
+    except BaseException:
+        database.close()
+        raise
+    database.conn.close()
     app.state.database = database
     app.state.readiness = ReadinessProbe(database)
     app.state.worker_health = WorkerHealth(
@@ -55,7 +59,10 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         stop.set()
-        await runner
+        try:
+            await runner
+        finally:
+            database.close()
 
 
 asset_revision = frontend_revision(settings.frontend_path)

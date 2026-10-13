@@ -121,16 +121,15 @@ def test_version_three_upgrade_preserves_rows_relationships_and_indexes(populate
             {k: row[k] for k in row.keys() if k != "deleted_at"}
             for row in conn.execute(f"SELECT * FROM {table} ORDER BY rowid")
         ] == before[table]
-    assert (
-        list(
-            conn.execute(
-                """SELECT name, sql FROM sqlite_master WHERE type='index'
+    upgraded_indexes = dict(
+        conn.execute(
+            """SELECT name, sql FROM sqlite_master WHERE type='index'
                 AND tbl_name NOT IN ('reconciliations', 'reconciliation_entries')
                 AND name NOT IN ('idx_transaction_audit_history', 'idx_transactions_deleted') ORDER BY name"""
-            )
         )
-        == indexes
     )
+    # New migrations may add indexes, but must preserve every historical definition.
+    assert all(upgraded_indexes[row["name"]] == row["sql"] for row in indexes)
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     with populated.database.connection() as another:
         with pytest.raises(sqlite3.IntegrityError):

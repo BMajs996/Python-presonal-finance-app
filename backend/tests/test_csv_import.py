@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from uuid import uuid4
 
 from app.main import app
@@ -79,3 +81,52 @@ def test_csv_concurrent_retry_creates_one_batch(raw_client):
         for future in futures:
             assert future.result(timeout=10).json() == {"imported": 1, "duplicates": 0}
     assert raw_client.get("/api/transactions").json()["total"] == 1
+
+
+def test_csv_concurrent_distinct_batches_create_one_financial_row(raw_client):
+    login_client(raw_client)
+    barrier = Barrier(2)
+
+    def commit():
+        barrier.wait(timeout=5)
+        return raw_client.post(
+            "/api/transactions/import",
+            json={
+                "batch_id": str(uuid4()),
+                "rows": [row()],
+            },
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        futures = [workers.submit(commit) for _ in range(2)]
+        responses = [future.result(timeout=10) for future in futures]
+    assert all(response.status_code == 200 for response in responses)
+    assert sorted(response.json()["imported"] for response in responses) == [0, 1]
+    assert sum(response.json()["duplicates"] for response in responses) == 1
+    with app.state.database.connection() as connection:
+        assert connection.execute("SELECT COUNT(*),SUM(amount_cents) FROM transactions").fetchone()[0] == 1
+        assert connection.execute("SELECT SUM(amount_cents) FROM transactions").fetchone()[0] == 1234
+        assert connection.execute("SELECT COUNT(*) FROM transaction_audit").fetchone()[0] == 1
+        assert (
+            connection.execute("SELECT COUNT(*) FROM settings WHERE key LIKE 'csv-import:%'").fetchone()[0]
+            == 2
+        )
+
+
+def test_csv_commit_rechecks_account_deactivated_after_preview(raw_client):
+    login_client(raw_client)
+    account = raw_client.post("/api/accounts", json={"name": "Import account"}).json()
+    rows = [row(account_id=account["id"])]
+    preview = raw_client.post("/api/transactions/import/preview", json={"rows": rows})
+    assert preview.json()["rows"][0]["status"] == "valid"
+    assert raw_client.delete(f"/api/accounts/{account['id']}").status_code == 204
+    response = raw_client.post("/api/transactions/import", json={"batch_id": str(uuid4()), "rows": rows})
+    assert response.status_code == 409
+    assert "inactive" in response.json()["detail"]
+    with app.state.database.connection() as connection:
+        for table in ("transactions", "transaction_audit"):
+            assert connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+        assert (
+            connection.execute("SELECT COUNT(*) FROM settings WHERE key LIKE 'csv-import:%'").fetchone()[0]
+            == 0
+        )

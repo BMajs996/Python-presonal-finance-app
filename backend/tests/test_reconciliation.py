@@ -7,7 +7,7 @@ import pytest
 from app.database import FinanceDatabase
 from app.domain import business_date
 from app.domain.errors import Conflict, InvalidOperation, NotFound
-from app.migrations import migrate
+from app.migrations import LATEST_SCHEMA_VERSION, migrate
 from app.reconciliation_schemas import ClearedEntry, StatementCreate
 from app.repositories.reconciliation_repository import ReconciliationRepository
 from app.schemas import AccountCreate, TransactionCreate, TransferCreate
@@ -241,8 +241,8 @@ def test_migration_preserves_money_and_rolls_back_partial_ddl(db):
         db.conn.set_authorizer(None)
     assert db.conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 5
     assert not db.conn.execute("SELECT name FROM sqlite_master WHERE name='reconciliations'").fetchall()
-    assert migrate(db.conn) == 6
-    assert migrate(db.conn) == 6
+    assert migrate(db.conn) == LATEST_SCHEMA_VERSION
+    assert migrate(db.conn) == LATEST_SCHEMA_VERSION
     assert db.get_transaction(before["id"]) == before
     assert db.conn.execute("PRAGMA foreign_key_check").fetchall() == []
 
