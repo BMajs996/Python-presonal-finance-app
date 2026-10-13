@@ -88,10 +88,34 @@ if __name__ == "__main__":
                 current_instant[0] += timedelta(seconds=1)
                 return {"advanced": True}
 
+        if os.environ.get("E2E_ACCOUNT_SCENARIO") == "1":
+            from fastapi import HTTPException, Request
+
+            from backend.app.core.config import settings
+            from backend.app.main import app
+            from backend.app.services.user_account_service import UserAccountService
+
+            # Credential issuance exists only in disposable test servers, not production routes.
+            @app.post("/api/e2e/invite-member")
+            def invite_member(request: Request):
+                if not request.state.owner_session["is_admin"]:
+                    raise HTTPException(403, "Administrator access required")
+                return {
+                    "token": UserAccountService(request.app.state.database).issue_code(
+                        "invite", "member@example.com"
+                    )
+                }
+
+            @app.post("/api/e2e/reset-member")
+            def reset_member(request: Request):
+                if not request.state.owner_session["is_admin"]:
+                    raise HTTPException(403, "Administrator access required")
+                return {"token": UserAccountService(request.app.state.database).issue_code("reset", "member")}
+
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             os.environ["CORS_ORIGINS"] = f"http://127.0.0.1:{listener.getsockname()[1]}"
-            if os.environ.get("E2E_LEDGER_SCENARIO") == "1":
+            if os.environ.get("E2E_LEDGER_SCENARIO") == "1" or os.environ.get("E2E_ACCOUNT_SCENARIO") == "1":
                 settings.cors_origins = os.environ["CORS_ORIGINS"]
             print(f"E2E_URL=http://127.0.0.1:{listener.getsockname()[1]}", flush=True)
             server = uvicorn.Server(uvicorn.Config("backend.app.main:app", log_level="warning"))

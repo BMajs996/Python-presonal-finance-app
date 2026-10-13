@@ -12,9 +12,11 @@ class AccountRepository(BaseRepository):
         return self._select(include_inactive=include_inactive)
 
     def _select(self, *, include_inactive: bool = False, account_id: int | None = None):
-        conditions = [] if include_inactive else ["a.active=1"]
+        conditions = ["a.user_id=?"]
+        if not include_inactive:
+            conditions.append("a.active=1")
         cutoff = business_date.today().isoformat()
-        params: list[str | int] = []
+        params: list[str | int] = [self.user_id]
         if account_id is not None:
             conditions.append("a.id=?")
             params.append(account_id)
@@ -66,9 +68,9 @@ class AccountRepository(BaseRepository):
             cursor = self.conn.execute(
                 """
                 INSERT INTO accounts(
-                    name, type, currency, opening_balance, opening_balance_cents, active, created_at
+                    name, type, currency, opening_balance, opening_balance_cents, active, created_at, user_id
                 )
-                VALUES (?, ?, ?, ?, ?, 1, ?) RETURNING id
+                VALUES (?, ?, ?, ?, ?, 1, ?, ?) RETURNING id
                 """,
                 (
                     name,
@@ -77,6 +79,7 @@ class AccountRepository(BaseRepository):
                     opening_balance.as_float(),
                     opening_balance.cents,
                     datetime.now(UTC).isoformat(),
+                    self.user_id,
                 ),
             )
             account_id = self.inserted_id(cursor)
@@ -85,6 +88,7 @@ class AccountRepository(BaseRepository):
     def deactivate(self, account_id: int):
         with self.conn:
             self.conn.execute("BEGIN IMMEDIATE")
+            self.account_currency(account_id)
             if account_id == self.default_account_id():
                 raise InvalidOperation("Main Account cannot be deactivated")
             if self.conn.execute(
@@ -92,7 +96,9 @@ class AccountRepository(BaseRepository):
                 (account_id,),
             ).fetchone():
                 raise Conflict("Pause or move active recurring schedules before deactivating this account")
-            self.conn.execute("UPDATE accounts SET active=0 WHERE id=?", (account_id,))
+            self.conn.execute(
+                "UPDATE accounts SET active=0 WHERE id=? AND user_id=?", (account_id, self.user_id)
+            )
 
     @staticmethod
     def _to_domain(row) -> Account:

@@ -11,6 +11,8 @@ from ..services.auth_service import COOKIE, AuthService
 from .config import settings
 
 PUBLIC_HEALTH_PATHS = frozenset({"/api/health", "/api/health/ready", "/api/health/worker"})
+PUBLIC_AUTH_PATHS = frozenset({"/api/auth/login", "/api/auth/register", "/api/auth/reset-password"})
+AUTH_PAGES = frozenset({"/login", "/register", "/reset-password"})
 
 
 class ConfiguredCORS:
@@ -61,7 +63,7 @@ class OwnerAccessMiddleware(BaseHTTPMiddleware):
             return JSONResponse({"detail": "HTTPS required"}, status_code=400)
         path = request.url.path
         protected = (
-            path.startswith("/api/") and path not in PUBLIC_HEALTH_PATHS and path != "/api/auth/login"
+            path.startswith("/api/") and path not in PUBLIC_HEALTH_PATHS and path not in PUBLIC_AUTH_PATHS
         ) or path in {
             "/",
             "/docs",
@@ -92,11 +94,11 @@ class OwnerAccessMiddleware(BaseHTTPMiddleware):
                 request.state.owner_session = session
         if response is None:
             response = await call_next(request)
-        if protected or path in PUBLIC_HEALTH_PATHS or path.startswith("/api/auth/") or path == "/login":
+        if protected or path in PUBLIC_HEALTH_PATHS or path.startswith("/api/auth/") or path in AUTH_PAGES:
             response.headers["Cache-Control"] = "no-store"
         elif path.startswith("/assets/"):
             response.headers["Cache-Control"] = "no-cache"
-        if path in {"/", "/login"} or path.startswith("/assets/"):
+        if path == "/" or path in AUTH_PAGES or path.startswith("/assets/"):
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; script-src 'self'; script-src-attr 'none'; "
                 "style-src 'self'; style-src-attr 'none'; "
@@ -105,4 +107,5 @@ class OwnerAccessMiddleware(BaseHTTPMiddleware):
             )
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "no-referrer"
         return response

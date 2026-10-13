@@ -37,7 +37,10 @@ def test_settings_normalize_currency_and_parse_cors_origins():
 
 
 def test_finance_service_dependency_builds_service_from_database(db):
-    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(database=db.database)))
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(database=db.database)),
+        state=SimpleNamespace(owner_session={"user_id": 1}),
+    )
     dependency = get_finance_service(request)
 
     service = next(dependency)

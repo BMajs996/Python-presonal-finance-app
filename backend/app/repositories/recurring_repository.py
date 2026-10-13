@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import date
 
 from ..domain import business_date
@@ -15,8 +17,9 @@ logger = logging.getLogger(__name__)
 class RecurringRepository(BaseRepository):
     def oldest_due(self, through: date) -> date | None:
         row = self.conn.execute(
-            "SELECT MIN(next_date) AS oldest FROM recurring_transactions WHERE active=1 AND next_date<=?",
-            (through.isoformat(),),
+            "SELECT MIN(next_date) AS oldest FROM recurring_transactions WHERE active=1 AND next_date<=? "
+            "AND account_id IN (SELECT id FROM accounts WHERE user_id=?)",
+            (through.isoformat(), self.user_id),
         ).fetchone()
         return date.fromisoformat(row["oldest"]) if row["oldest"] else None
 
@@ -28,8 +31,9 @@ class RecurringRepository(BaseRepository):
                 SELECT r.*, a.name AS account_name, a.currency AS account_currency
                 FROM recurring_transactions r
                 LEFT JOIN accounts a ON a.id=r.account_id
-                WHERE r.active=1 ORDER BY r.next_date
-                """
+                WHERE r.active=1 AND a.user_id=? ORDER BY r.next_date
+                """,
+                (self.user_id,),
             )
         ]
 
@@ -39,9 +43,9 @@ class RecurringRepository(BaseRepository):
             SELECT r.*, a.name AS account_name, a.currency AS account_currency
             FROM recurring_transactions r
             LEFT JOIN accounts a ON a.id=r.account_id
-            WHERE r.id=?
+            WHERE r.id=? AND a.user_id=?
             """,
-            (recurring_id,),
+            (recurring_id, self.user_id),
         ).fetchone()
         return self._serialize(row) if row else None
 
@@ -76,8 +80,9 @@ class RecurringRepository(BaseRepository):
         with self.conn:
             self.conn.execute("BEGIN IMMEDIATE")
             if not self.conn.execute(
-                "SELECT id FROM recurring_transactions WHERE id=? AND active=1",
-                (recurring_id,),
+                "SELECT id FROM recurring_transactions WHERE id=? AND active=1 "
+                "AND account_id IN (SELECT id FROM accounts WHERE user_id=?)",
+                (recurring_id, self.user_id),
             ).fetchone():
                 return None
             account_id = self.resolve_account_id(payload.account_id)
@@ -106,22 +111,42 @@ class RecurringRepository(BaseRepository):
     def deactivate(self, recurring_id: int):
         with self.conn:
             self.conn.execute(
-                "UPDATE recurring_transactions SET active=0 WHERE id=?",
-                (recurring_id,),
+                "UPDATE recurring_transactions SET active=0 WHERE id=? "
+                "AND account_id IN (SELECT id FROM accounts WHERE user_id=?)",
+                (recurring_id, self.user_id),
             )
 
     @business_date.snapshot()
-    def process_due(self, through: date | None = None, *, should_stop: Callable[[], bool] | None = None):
+    def process_due(
+        self,
+        through: date | None = None,
+        *,
+        should_stop: Callable[[], bool] | None = None,
+        schedule_ids: Sequence[int] | None = None,
+    ):
         through = through or business_date.today()
         business_date.require_posted(through)
         if self.conn.in_transaction:
             raise RuntimeError("Recurring processing requires its own transaction")
         created = 0
-        schedules = self.conn.execute(
+        selected = ""
+        params: list[str | int] = [through.isoformat(), self.user_id]
+        if schedule_ids is not None:
+            if not schedule_ids:
+                return 0
+            if len(schedule_ids) > SCHEDULE_BATCH_SIZE:
+                raise ValueError("Recurring schedule selection exceeds the batch limit")
+            selected = "AND id IN (" + ",".join("?" for _ in schedule_ids) + ") "
+            params.extend(schedule_ids)
+        params.append(SCHEDULE_BATCH_SIZE)
+        # Selection contains generated placeholders only; dates, IDs and limits are bound.
+        schedule_sql = (
             "SELECT id FROM recurring_transactions WHERE active=1 AND next_date<=? "
-            "ORDER BY next_date,id LIMIT ?",
-            (through.isoformat(), SCHEDULE_BATCH_SIZE),
-        ).fetchall()
+            "AND account_id IN (SELECT id FROM accounts WHERE user_id=?) "
+            + selected
+            + "ORDER BY next_date,id LIMIT ?"
+        )  # nosec B608
+        schedules = self.conn.execute(schedule_sql, params).fetchall()
         for schedule in schedules:
             if should_stop is not None and should_stop():
                 break
@@ -131,8 +156,9 @@ class RecurringRepository(BaseRepository):
                 row = self.conn.execute(
                     """SELECT r.*, a.active AS account_active
                     FROM recurring_transactions r LEFT JOIN accounts a ON a.id=r.account_id
-                    WHERE r.id=? AND r.active=1 AND r.next_date<=?""",
-                    (schedule["id"], through.isoformat()),
+                    JOIN users u ON u.id=a.user_id
+                    WHERE r.id=? AND r.active=1 AND r.next_date<=? AND a.user_id=? AND u.active=1""",
+                    (schedule["id"], through.isoformat(), self.user_id),
                 ).fetchone()
                 if row is None:
                     continue

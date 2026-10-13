@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from ..operations_schemas import OperationsResponse, ProbeResponse
 from .errors import ERROR_RESPONSES
@@ -29,6 +29,8 @@ def worker_health(request: Request, response: Response):
 
 @router.get("/api/operations/health", response_model=OperationsResponse, responses=ERROR_RESPONSES)
 def operations(request: Request):
+    if not request.state.owner_session["is_admin"]:
+        raise HTTPException(403, "Administrator access required")
     return {
         "database_ready": request.app.state.readiness.ready(),
         "worker": request.app.state.worker_health.snapshot(),

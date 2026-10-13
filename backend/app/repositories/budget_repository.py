@@ -14,13 +14,14 @@ class BudgetRepository(BaseRepository):
             FROM budgets b
             LEFT JOIN transactions t
               ON t.category=b.category AND t.deleted_at IS NULL
+             AND t.account_id IN (SELECT id FROM accounts WHERE user_id=b.user_id)
              AND t.type='expense'
              AND t.date BETWEEN ? AND ?
-            WHERE b.month_year=?
+            WHERE b.month_year=? AND b.user_id=?
             GROUP BY b.id, b.category, b.monthly_limit_cents, b.month_year
             ORDER BY b.category
             """,
-            (today.replace(day=1).isoformat(), today.isoformat(), month),
+            (today.replace(day=1).isoformat(), today.isoformat(), month, self.user_id),
         ).fetchall()
         result = []
         for row in rows:
@@ -46,28 +47,30 @@ class BudgetRepository(BaseRepository):
         with self.conn:
             self.conn.execute(
                 """
-                INSERT INTO budgets(category, monthly_limit, monthly_limit_cents, month_year)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(category) DO UPDATE SET
+                INSERT INTO budgets(category, monthly_limit, monthly_limit_cents, month_year, user_id)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(user_id,category) DO UPDATE SET
                     monthly_limit=excluded.monthly_limit,
                     monthly_limit_cents=excluded.monthly_limit_cents,
                     month_year=excluded.month_year
                 """,
-                (payload.category.strip(), limit.as_float(), limit.cents, month),
+                (payload.category.strip(), limit.as_float(), limit.cents, month, self.user_id),
             )
         return next(budget for budget in self.usage() if budget["category"] == payload.category.strip())
 
     def update(self, budget_id: int, payload):
         month = business_date.today().strftime("%Y-%m")
         limit = Money.from_amount(payload.monthly_limit, self.base_currency)
-        if not self.conn.execute("SELECT id FROM budgets WHERE id=?", (budget_id,)).fetchone():
+        if not self.conn.execute(
+            "SELECT id FROM budgets WHERE id=? AND user_id=?", (budget_id, self.user_id)
+        ).fetchone():
             return None
         with self.conn:
             self.conn.execute(
                 """
                 UPDATE budgets
                 SET category=?, monthly_limit=?, monthly_limit_cents=?, month_year=?
-                WHERE id=?
+                WHERE id=? AND user_id=?
                 """,
                 (
                     payload.category.strip(),
@@ -75,6 +78,7 @@ class BudgetRepository(BaseRepository):
                     limit.cents,
                     month,
                     budget_id,
+                    self.user_id,
                 ),
             )
         return next(
@@ -84,4 +88,4 @@ class BudgetRepository(BaseRepository):
 
     def delete(self, budget_id: int):
         with self.conn:
-            self.conn.execute("DELETE FROM budgets WHERE id=?", (budget_id,))
+            self.conn.execute("DELETE FROM budgets WHERE id=? AND user_id=?", (budget_id, self.user_id))

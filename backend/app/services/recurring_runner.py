@@ -1,12 +1,13 @@
 import asyncio
 import logging
 from collections.abc import Callable
+from datetime import date
 from threading import Event
 
 from ..database import FinanceDatabase
 from ..domain import business_date
 from ..postgres_database import PostgresDatabase
-from ..repositories.recurring_repository import RecurringRepository
+from ..repositories.recurring_repository import SCHEDULE_BATCH_SIZE, RecurringRepository
 from .worker_health import WorkerHealth, error_code, safe_location
 
 logger = logging.getLogger("uvicorn.error.recurring")
@@ -18,7 +19,23 @@ def process_recurring(
     should_stop: Callable[[], bool] | None = None,
 ) -> int:
     with business_date.snapshot(), database.connection() as connection:
-        return RecurringRepository(connection, database.base_currency).process_due(should_stop=should_stop)
+        rows = connection.execute(
+            "SELECT r.id,a.user_id FROM recurring_transactions r JOIN accounts a ON a.id=r.account_id "
+            "JOIN users u ON u.id=a.user_id WHERE r.active=1 AND u.active=1 AND r.next_date<=? "
+            "ORDER BY r.next_date,r.id LIMIT ?",
+            (business_date.today().isoformat(), SCHEDULE_BATCH_SIZE),
+        ).fetchall()
+        groups: dict[int, list[int]] = {}
+        for row in rows:
+            groups.setdefault(row["user_id"], []).append(row["id"])
+        created = 0
+        for user_id, ids in groups.items():
+            if should_stop and should_stop():
+                break
+            created += RecurringRepository(connection, database.base_currency, user_id=user_id).process_due(
+                should_stop=should_stop, schedule_ids=ids
+            )
+        return created
 
 
 def process_pass(database, should_stop=None):
@@ -26,7 +43,12 @@ def process_pass(database, should_stop=None):
         today = business_date.today()
         created = process_recurring(database, should_stop=should_stop)
         with database.connection() as connection:
-            oldest = RecurringRepository(connection, database.base_currency).oldest_due(today)
+            row = connection.execute(
+                "SELECT MIN(r.next_date) FROM recurring_transactions r JOIN accounts a ON a.id=r.account_id "
+                "JOIN users u ON u.id=a.user_id WHERE r.active=1 AND u.active=1 AND r.next_date<=?",
+                (today.isoformat(),),
+            ).fetchone()
+            oldest = date.fromisoformat(row[0]) if row and row[0] else None
         return created, oldest, today
 
 

@@ -492,10 +492,16 @@ PostgreSQL backend tests are skipped. Browser tests default to temporary SQLite 
 CI supplies PostgreSQL 18 and exercises both backends.
 
 
-## Single-owner access
+## Accounts and access
 
-All financial API routes and API documentation require an owner session. There is no registration,
-anonymous mode, or multi-user sharing. Existing financial records belong to this one owner.
+The [ownership foundation](docs/user-isolation.md) scopes financial repositories by
+the authenticated user. [Invite-only accounts](docs/user-accounts.md) add independent
+passwords/sessions, profiles with email/phone and administrator-issued recovery.
+Automatic email/SMS delivery, contact verification, 2FA and Google OAuth are not enabled.
+
+All financial API routes and API documentation require a user session. There is no anonymous
+finance access or shared household ledger; users have independent data. Registration requires
+an administrator-issued invitation. Existing financial records belong to bootstrap user 1.
 
 From the repository root, set or reset the password using hidden terminal prompts:
 
@@ -508,7 +514,8 @@ python run.py
 The default username is `owner`; override it with `OWNER_USERNAME`. Passwords must be 15-1024
 characters. Only an Argon2id hash is written to the private `.env`, preserving other settings.
 Restart every app worker after changing credentials. Changing the username or password hash
-invalidates existing sessions. There is no web password-reset endpoint; server access is required.
+invalidates that owner's existing sessions. Other members are unaffected. Recovery links are
+issued through the trusted-host CLI; there is no email forgot-password endpoint.
 Without an owner hash, local startup is allowed but financial access remains locked.
 
 Sessions use random opaque HttpOnly, SameSite=Strict cookies. Only token hashes are stored in
@@ -557,8 +564,10 @@ Serve the UI and API from the same origin over HTTPS through a trusted reverse p
 Cross-site frontend hosting is not supported by the Strict session cookie.
 Keep PostgreSQL private and do not use development reload in production.
 
-Database dumps can contain session records. When restoring, rotate the owner password before
-exposing the restored app so previously issued sessions cannot become valid again.
+Database dumps can contain session records. Before exposing a restored database, run
+`python -m backend.app.manage_users revoke-all` using the deployed service environment.
+This revokes every user's restored sessions/account links; owner-only password rotation
+is insufficient. Review/reset credentials affected by the restore before reopening access.
 SQLite-to-PostgreSQL migration intentionally omits these operational auth tables: financial data
 is verified as before, while sessions and login counters start fresh on the destination.
 Keep the owner hash configured separately; it is not part of a database backup.

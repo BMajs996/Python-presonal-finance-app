@@ -29,7 +29,8 @@ class TransactionRepository(BaseRepository):
             WHERE
         """
         query += " t.deleted_at IS NOT NULL" if deleted else " t.deleted_at IS NULL"
-        params: list[str | int] = []
+        query += " AND a.user_id=?"
+        params: list[str | int] = [self.user_id]
         if not deleted:
             query += " AND t.date<=?"
             params.append(business_date.today().isoformat())
@@ -73,9 +74,9 @@ class TransactionRepository(BaseRepository):
             SELECT t.*, a.name AS account_name, a.currency AS account_currency
             FROM transactions t
             LEFT JOIN accounts a ON a.id=t.account_id
-            WHERE t.id=? AND (? OR t.deleted_at IS NULL)
+            WHERE t.id=? AND a.user_id=? AND (? OR t.deleted_at IS NULL)
             """,
-            (transaction_id, include_deleted),
+            (transaction_id, self.user_id, include_deleted),
         ).fetchone()
         return self._to_domain(row).to_dict() if row else None
 
@@ -131,6 +132,7 @@ class TransactionRepository(BaseRepository):
                 UPDATE transactions
                 SET date=?, type=?, category=?, amount=?, amount_cents=?, description=?, account_id=?
                 WHERE id=? AND deleted_at IS NULL
+                AND account_id IN (SELECT id FROM accounts WHERE user_id=?)
                 """,
                 (
                     payload.date.isoformat(),
@@ -141,6 +143,7 @@ class TransactionRepository(BaseRepository):
                     payload.description.strip(),
                     account_id,
                     transaction_id,
+                    self.user_id,
                 ),
             )
         return self.get(transaction_id)
@@ -148,8 +151,9 @@ class TransactionRepository(BaseRepository):
     def delete(self, transaction_id: int):
         with self.conn:
             cursor = self.conn.execute(
-                "UPDATE transactions SET deleted_at=? WHERE id=? AND deleted_at IS NULL",
-                (datetime.now(UTC).isoformat(), transaction_id),
+                "UPDATE transactions SET deleted_at=? WHERE id=? AND deleted_at IS NULL "
+                "AND account_id IN (SELECT id FROM accounts WHERE user_id=?)",
+                (datetime.now(UTC).isoformat(), transaction_id, self.user_id),
             )
         return cursor.rowcount > 0
 
@@ -157,7 +161,9 @@ class TransactionRepository(BaseRepository):
         with self.conn:
             self.conn.execute("BEGIN IMMEDIATE")
             row = self.conn.execute(
-                "SELECT account_id, deleted_at, date FROM transactions WHERE id=?", (transaction_id,)
+                "SELECT account_id, deleted_at, date FROM transactions WHERE id=? "
+                "AND account_id IN (SELECT id FROM accounts WHERE user_id=?)",
+                (transaction_id, self.user_id),
             ).fetchone()
             if row is None:
                 raise NotFound("Transaction not found")
@@ -191,8 +197,9 @@ class TransactionRepository(BaseRepository):
             row["category"]
             for row in self.conn.execute(
                 "SELECT DISTINCT category FROM transactions "
-                "WHERE deleted_at IS NULL AND date<=? ORDER BY category",
-                (business_date.today().isoformat(),),
+                "WHERE deleted_at IS NULL AND date<=? "
+                "AND account_id IN (SELECT id FROM accounts WHERE user_id=?) ORDER BY category",
+                (business_date.today().isoformat(), self.user_id),
             )
         ]
 

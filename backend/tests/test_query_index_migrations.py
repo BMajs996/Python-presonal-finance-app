@@ -12,6 +12,7 @@ from app.postgres_database import SCHEMA_VERSION, PostgresDatabase
 from app.schemas import TransactionCreate
 
 from .postgres_helpers import pg_url as pg_url
+from .schema_helpers import remove_ownership
 
 
 def remove_indexes(connection):
@@ -24,6 +25,7 @@ def test_sqlite_index_upgrade_is_atomic_and_retryable(db):
         TransactionCreate(date=business_date.today(), type="income", category="Salary", amount="12.34")
     )
     with db.conn:
+        remove_ownership(db.conn)
         remove_indexes(db.conn)
         db.conn.execute("DELETE FROM schema_migrations WHERE version=7")
 
@@ -56,6 +58,7 @@ def test_concurrent_sqlite_index_upgrade_rechecks_version_under_writer_lock(db, 
 
     path = db.database.db_path
     with db.conn:
+        remove_ownership(db.conn)
         remove_indexes(db.conn)
         db.conn.execute("DELETE FROM schema_migrations WHERE version=7")
     db.close()
@@ -85,12 +88,15 @@ def test_concurrent_sqlite_index_upgrade_rechecks_version_under_writer_lock(db, 
 def test_postgres_version_one_upgrade_rolls_back_and_can_retry(pg_url, monkeypatch):
     from app import postgres_database
 
-    database = PostgresDatabase(pg_url)
-    with database.conn.raw.transaction():
-        remove_indexes(database.conn)
-        database.conn.execute("DELETE FROM postgres_schema_migrations WHERE version=2")
-        database.conn.execute("INSERT INTO settings VALUES ('preserved','value')")
-    database.close()
+    with monkeypatch.context() as historical:
+        historical.setattr(postgres_database, "SCHEMA_VERSION", 2)
+        with psycopg.connect(pg_url) as raw:
+            postgres_database.create_schema(raw)
+            postgres_database.install_guards(raw)
+            raw.execute("INSERT INTO accounts(name,created_at) VALUES ('Main Account','test')")
+            remove_indexes(raw)
+            raw.execute("DELETE FROM postgres_schema_migrations WHERE version=2")
+            raw.execute("INSERT INTO settings VALUES ('preserved','value')")
 
     def fail_after_first(connection):
         name, definition = next(iter(INDEXES.items()))

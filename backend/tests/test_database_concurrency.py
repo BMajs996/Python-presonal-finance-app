@@ -126,6 +126,7 @@ def test_request_dependency_owns_and_closes_its_connection(tmp_path):
     database.close()
     request = SimpleNamespace(
         app=SimpleNamespace(state=SimpleNamespace(database=database)),
+        state=SimpleNamespace(owner_session={"user_id": 1}),
     )
 
     dependency = get_finance_service(request)

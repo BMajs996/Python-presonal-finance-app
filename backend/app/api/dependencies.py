@@ -13,5 +13,6 @@ def get_finance_service(request: Request) -> Iterator[FinanceService]:
             database,
             database.base_currency,
             connection=connection,
+            user_id=request.state.owner_session["user_id"],
         )
         yield FinanceService(repository)

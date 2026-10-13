@@ -235,7 +235,7 @@ def test_postgres_account_plan_aggregates_only_selected_accounts(pg_url):
         assert accounts[0]["transaction_count"] == 100
         plan = database.conn.execute(
             "EXPLAIN (ANALYZE, FORMAT JSON) " + counter.queries[-1],
-            (cutoff,) * 3,
+            (1, cutoff, cutoff, cutoff),
         ).fetchone()[0][0]["Plan"]
 
         def grouped_rows(node):

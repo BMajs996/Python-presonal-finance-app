@@ -20,7 +20,11 @@ router = APIRouter(prefix="/api/reconciliations", tags=["reconciliation"], respo
 def get_service(request: Request):
     database = request.app.state.database
     with database.connection() as connection:
-        yield ReconciliationService(ReconciliationRepository(connection, database.base_currency))
+        yield ReconciliationService(
+            ReconciliationRepository(
+                connection, database.base_currency, user_id=request.state.owner_session["user_id"]
+            )
+        )
 
 
 @router.get("", response_model=list[StatementSummary])

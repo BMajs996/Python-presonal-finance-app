@@ -9,17 +9,23 @@ class BalanceRepository(BaseRepository):
             """
             SELECT COALESCE((
                        SELECT SUM(opening_balance_cents)
-                       FROM accounts WHERE currency=?
+                       FROM accounts WHERE currency=? AND user_id=?
                    ), 0)
                  + COALESCE((
                        SELECT SUM(CASE WHEN t.type='income'
                                        THEN t.amount_cents ELSE -t.amount_cents END)
                        FROM transactions t
                        JOIN accounts a ON a.id=t.account_id
-                       WHERE t.deleted_at IS NULL AND a.currency=? AND t.date<=?
+                       WHERE t.deleted_at IS NULL AND a.currency=? AND t.date<=? AND a.user_id=?
                    ), 0) AS balance_cents
             """,
-            (self.base_currency, self.base_currency, business_date.today().isoformat()),
+            (
+                self.base_currency,
+                self.user_id,
+                self.base_currency,
+                business_date.today().isoformat(),
+                self.user_id,
+            ),
         ).fetchone()
         return int(row["balance_cents"] or 0)
 
@@ -28,17 +34,17 @@ class BalanceRepository(BaseRepository):
             """
             SELECT COALESCE((
                        SELECT SUM(opening_balance_cents)
-                       FROM accounts WHERE currency=?
+                       FROM accounts WHERE currency=? AND user_id=?
                    ), 0)
                  + COALESCE((
                        SELECT SUM(CASE WHEN t.type='income'
                                        THEN t.amount_cents ELSE -t.amount_cents END)
                        FROM transactions t
                        JOIN accounts a ON a.id=t.account_id
-                       WHERE t.deleted_at IS NULL AND t.date < ? AND a.currency=?
+                       WHERE t.deleted_at IS NULL AND t.date < ? AND a.currency=? AND a.user_id=?
                    ), 0) AS balance_cents
             """,
-            (self.base_currency, period.start_iso, self.base_currency),
+            (self.base_currency, self.user_id, period.start_iso, self.base_currency, self.user_id),
         ).fetchone()["balance_cents"]
         daily = self.conn.execute(
             """
@@ -47,11 +53,11 @@ class BalanceRepository(BaseRepository):
                             THEN t.amount_cents ELSE -t.amount_cents END) change_cents
             FROM transactions t
             JOIN accounts a ON a.id=t.account_id
-            WHERE t.deleted_at IS NULL AND t.date BETWEEN ? AND ? AND a.currency=?
+            WHERE t.deleted_at IS NULL AND t.date BETWEEN ? AND ? AND a.currency=? AND a.user_id=?
             GROUP BY t.date
             ORDER BY t.date
             """,
-            (period.start_iso, period.end_iso, self.base_currency),
+            (period.start_iso, period.end_iso, self.base_currency, self.user_id),
         ).fetchall()
         return int(opening or 0), [dict(row) for row in daily]
 
@@ -61,17 +67,17 @@ class BalanceRepository(BaseRepository):
             """
             SELECT COALESCE((
                        SELECT SUM(opening_balance_cents)
-                       FROM accounts WHERE currency=?
+                       FROM accounts WHERE currency=? AND user_id=?
                    ), 0)
                  + COALESCE((
                        SELECT SUM(CASE WHEN t.type='income'
                                        THEN t.amount_cents ELSE -t.amount_cents END)
                        FROM transactions t
                        JOIN accounts a ON a.id=t.account_id
-                       WHERE t.deleted_at IS NULL AND t.date < ? AND a.currency=?
+                       WHERE t.deleted_at IS NULL AND t.date < ? AND a.currency=? AND a.user_id=?
                    ), 0) AS balance_cents
             """,
-            (self.base_currency, start_month, self.base_currency),
+            (self.base_currency, self.user_id, start_month, self.base_currency, self.user_id),
         ).fetchone()["balance_cents"]
         changes = {
             row["month"]: int(row["change_cents"] or 0)
@@ -82,10 +88,10 @@ class BalanceRepository(BaseRepository):
                                 THEN t.amount_cents ELSE -t.amount_cents END) change_cents
                 FROM transactions t
                 JOIN accounts a ON a.id=t.account_id
-                WHERE t.deleted_at IS NULL AND t.date >= ? AND t.date<=? AND a.currency=?
+                WHERE t.deleted_at IS NULL AND t.date >= ? AND t.date<=? AND a.currency=? AND a.user_id=?
                 GROUP BY month
                 """,
-                (start_month, business_date.today().isoformat(), self.base_currency),
+                (start_month, business_date.today().isoformat(), self.base_currency, self.user_id),
             )
         }
         return int(opening or 0), changes

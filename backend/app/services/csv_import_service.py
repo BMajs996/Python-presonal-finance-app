@@ -33,8 +33,12 @@ class CsvImportService:
             batch = account_ids[start : start + LOOKUP_BATCH_SIZE]
             placeholders = ",".join("?" for _ in batch)
             # Only generated placeholders are interpolated; IDs remain bound parameters.
-            query = f"SELECT id,currency FROM accounts WHERE active=1 AND id IN ({placeholders})"
-            accounts.update({row["id"]: row["currency"] for row in repo.conn.execute(query, batch)})
+            query = (
+                f"SELECT id,currency FROM accounts WHERE active=1 AND user_id=? AND id IN ({placeholders})"
+            )
+            accounts.update(
+                {row["id"]: row["currency"] for row in repo.conn.execute(query, [repo.user_id, *batch])}
+            )
         prepared: list[tuple[ImportKey | None, str | None]] = []
         descriptions: dict[ImportKey, str] = {}
         key: ImportKey | None
@@ -109,7 +113,9 @@ class CsvImportService:
             business_date.require_posted(row.date)
         serialized = json.dumps([row.model_dump(mode="json") for row in payload.rows], sort_keys=True)
         fingerprint = hashlib.sha256(serialized.encode()).hexdigest()
-        key = "csv-import:" + str(payload.batch_id)
+        # Preserve bootstrap owner's existing retry receipts without exposing them to another user.
+        prefix = "csv-import:" if repo.user_id == 1 else f"user:{repo.user_id}:csv-import:"
+        key = prefix + str(payload.batch_id)
         with repo.conn:
             repo.conn.execute("BEGIN IMMEDIATE")
             receipt = repo.conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()

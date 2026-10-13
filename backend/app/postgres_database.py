@@ -8,10 +8,13 @@ from psycopg.conninfo import conninfo_to_dict
 from psycopg_pool import ConnectionPool, PoolTimeout, TooManyRequests
 
 from .database_errors import DatabaseCapacityError
+from .migrations_ownership import migrate_ownership
 from .migrations_query_indexes import migrate_query_indexes
+from .migrations_user_accounts import migrate_user_accounts
 from .postgres_connection import WRITE_LOCK, PostgresConnection, record_factory
 
 TABLES = (
+    "users",
     "accounts",
     "transactions",
     "recurring_transactions",
@@ -24,7 +27,7 @@ TABLES = (
     "reconciliations",
     "reconciliation_entries",
 )
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 
 
 def create_schema(connection):
@@ -43,7 +46,7 @@ def migrate_schema(connection):
     ]
     if not versions or versions[-1] > SCHEMA_VERSION or versions != list(range(1, versions[-1] + 1)):
         raise ValueError("Unsupported PostgreSQL schema version")
-    migrations = {2: migrate_query_indexes}
+    migrations = {2: migrate_query_indexes, 3: migrate_ownership, 4: migrate_user_accounts}
     for version in range(versions[-1] + 1, SCHEMA_VERSION + 1):
         migrations[version](connection)
         connection.execute("INSERT INTO postgres_schema_migrations VALUES (%s)", (version,))
@@ -52,6 +55,8 @@ def migrate_schema(connection):
 def install_guards(connection):
     connection.execute((Path(__file__).with_name("postgres_guards.sql")).read_text())
     for table in TABLES:
+        if table == "users":
+            continue
         connection.execute(
             sql.SQL(
                 "CREATE TRIGGER finance_writer_lock BEFORE INSERT OR UPDATE OR DELETE ON {} "
@@ -91,7 +96,7 @@ class PostgresDatabase:
                 else:
                     migrate_schema(self.conn.raw)
                 main = self.conn.raw.execute(
-                    "SELECT currency FROM accounts WHERE name='Main Account'"
+                    "SELECT currency FROM accounts WHERE user_id=1 AND name='Main Account'"
                 ).fetchone()
                 if main is None or main[0] != base_currency:
                     raise ValueError("PostgreSQL Main Account currency does not match BASE_CURRENCY")

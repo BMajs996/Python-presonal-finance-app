@@ -143,9 +143,9 @@ def test_repository_missing_record_and_account_failure_paths(db):
     main_account_id = db.accounts.default_account_id()
     with pytest.raises(ValueError, match="cannot be deactivated"):
         db.deactivate_account(main_account_id)
-    with pytest.raises(ValueError, match="does not exist or is inactive"):
+    with pytest.raises(ValueError, match="Account not found"):
         db.accounts.resolve_account_id(99999)
-    with pytest.raises(ValueError, match="does not exist"):
+    with pytest.raises(ValueError, match="Account not found"):
         db.accounts.account_currency(99999)
 
 

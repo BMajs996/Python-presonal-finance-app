@@ -27,10 +27,11 @@
       <button class="nav-item" data-view="accounts">Accounts</button>
       <button class="nav-item" data-view="reconciliation">Reconciliation</button>
       <button class="nav-item" data-view="transfers">Transfers</button>
+      <button class="nav-item" data-view="profile">Profile</button>
     </nav>
 
     <div class="sidebar-footer">
-      <span>Personal Finance</span>
+      <span id="signed-in-name">Personal Finance</span>
 
     </div>
   </aside>
@@ -46,6 +47,40 @@
         <button class="primary" id="add-transaction-btn">+ Transaction</button>
       </div>
     </header>
+
+    <section id="profile-view" class="view hidden">
+      <div class="profile-layout">
+        <section class="profile-section">
+          <h2>Account</h2>
+          <p id="profile-identity"></p>
+          <form id="profile-form">
+            <label>Name<input id="profile-name" name="display_name" autocomplete="name" maxlength="100" required></label>
+            <label>Email<input id="profile-email" name="email" type="email" autocomplete="email" maxlength="254" required></label>
+            <small id="profile-email-state"></small>
+            <label>Phone (international)<input id="profile-phone" name="phone" type="tel" autocomplete="tel" maxlength="16" placeholder="+381641234567" required></label>
+            <small id="profile-phone-state"></small>
+            <label>Current password<input name="current_password" type="password" autocomplete="current-password" maxlength="1024" required></label>
+            <button class="primary" type="submit">Save profile</button>
+          </form>
+        </section>
+        <section class="profile-section">
+          <h2>Password</h2>
+          <form id="password-form">
+            <label>Current password<input name="current_password" type="password" autocomplete="current-password" maxlength="1024" required></label>
+            <label>New password<input name="password" type="password" autocomplete="new-password" minlength="15" maxlength="1024" required></label>
+            <label>Confirm new password<input name="confirmation" type="password" autocomplete="new-password" minlength="15" maxlength="1024" required></label>
+            <button class="primary" type="submit">Change password</button>
+          </form>
+        </section>
+      </div>
+      <section class="profile-section">
+        <div class="panel-head"><h2>Sessions</h2><button id="revoke-other-sessions" type="button">Sign out other sessions</button></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Session</th><th>Created</th><th>Last active</th><th>Expires</th><th>Action</th></tr></thead>
+          <tbody id="profile-sessions"></tbody>
+        </table></div>
+      </section>
+    </section>
 
     <section id="dashboard-view" class="view">
       <div class="cards">
