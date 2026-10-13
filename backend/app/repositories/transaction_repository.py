@@ -26,9 +26,10 @@ class TransactionRepository(BaseRepository):
             SELECT t.*, a.name AS account_name, a.currency AS account_currency
             FROM transactions t
             LEFT JOIN accounts a ON a.id=t.account_id
-            WHERE (t.deleted_at IS NOT NULL) = CAST(? AS BOOLEAN)
+            WHERE
         """
-        params: list[str | int] = [deleted]
+        query += " t.deleted_at IS NOT NULL" if deleted else " t.deleted_at IS NULL"
+        params: list[str | int] = []
         if not deleted:
             query += " AND t.date<=?"
             params.append(business_date.today().isoformat())
@@ -84,11 +85,16 @@ class TransactionRepository(BaseRepository):
             transaction_id = self.insert_uncommitted(payload)
         return self.get(transaction_id)
 
-    def insert_uncommitted(self, payload):
+    def insert_uncommitted(self, payload, *, resolved_account: tuple[int, str] | None = None):
         if not self.conn.in_transaction:
             raise RuntimeError("Transaction insertion requires a write transaction")
-        account_id = self.resolve_account_id(payload.account_id)
-        amount = Money.from_amount(payload.amount, self.account_currency(account_id))
+        # CSV resolves accounts once inside the same writer transaction.
+        if resolved_account is None:
+            account_id = self.resolve_account_id(payload.account_id)
+            currency = self.account_currency(account_id)
+        else:
+            account_id, currency = resolved_account
+        amount = Money.from_amount(payload.amount, currency)
         cursor = self.conn.execute(
             """
             INSERT INTO transactions(

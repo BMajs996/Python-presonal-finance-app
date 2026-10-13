@@ -15,13 +15,12 @@ class BudgetRepository(BaseRepository):
             LEFT JOIN transactions t
               ON t.category=b.category AND t.deleted_at IS NULL
              AND t.type='expense'
-             AND substr(t.date, 1, 7)=?
-             AND t.date<=?
+             AND t.date BETWEEN ? AND ?
             WHERE b.month_year=?
             GROUP BY b.id, b.category, b.monthly_limit_cents, b.month_year
             ORDER BY b.category
             """,
-            (month, today.isoformat(), month),
+            (today.replace(day=1).isoformat(), today.isoformat(), month),
         ).fetchall()
         result = []
         for row in rows:

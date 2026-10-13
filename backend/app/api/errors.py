@@ -7,16 +7,24 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from ..database_errors import constraint_message
+from ..database_errors import DatabaseCapacityError, constraint_message
 from ..domain.errors import Conflict, DomainError, NotFound
 from ..schemas import ErrorResponse
 
 ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
-    code: {"model": ErrorResponse} for code in (400, 404, 409)
+    code: {"model": ErrorResponse} for code in (400, 404, 409, 503)
 }
 
 
 def register_error_handlers(app: FastAPI) -> None:
+    @app.exception_handler(DatabaseCapacityError)
+    async def database_capacity_handler(_request: Request, _exc: DatabaseCapacityError):
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Database is busy. Try again shortly."},
+            headers={"Retry-After": "2", "Cache-Control": "no-store"},
+        )
+
     @app.exception_handler(RequestValidationError)
     async def validation_handler(request: Request, exc: RequestValidationError):
         if request.url.path.startswith("/api/auth/"):

@@ -7,10 +7,11 @@ existing desktop-era database without requiring a separate migration command.
 import sqlite3
 from datetime import UTC, datetime
 
+from .migrations_query_indexes import migrate_query_indexes
 from .migrations_reconciliation import migrate_reconciliation
 from .migrations_transaction_audit import migrate_transaction_audit
 
-LATEST_SCHEMA_VERSION = 6
+LATEST_SCHEMA_VERSION = 7
 
 MONEY_COLUMNS = (
     ("transactions", "amount", "amount_cents"),
@@ -183,6 +184,14 @@ def _migration_4_money_constraints(conn: sqlite3.Connection, _base_currency: str
             )
 
 
+def _schema_version(conn: sqlite3.Connection) -> int:
+    versions = [row[0] for row in conn.execute("SELECT version FROM schema_migrations ORDER BY version")]
+    current = versions[-1] if versions else 0
+    if current > LATEST_SCHEMA_VERSION or versions != list(range(1, current + 1)):
+        raise ValueError("Unsupported SQLite schema version or migration history")
+    return current
+
+
 def migrate(conn: sqlite3.Connection, base_currency: str = "USD") -> int:
     """Apply all migrations and return the resulting schema version."""
     conn.execute(
@@ -194,7 +203,7 @@ def migrate(conn: sqlite3.Connection, base_currency: str = "USD") -> int:
         """
     )
 
-    current = conn.execute("SELECT COALESCE(MAX(version), 0) FROM schema_migrations").fetchone()[0]
+    current = _schema_version(conn)
 
     migrations = {
         1: _migration_1_accounts_and_transfers,
@@ -203,10 +212,15 @@ def migrate(conn: sqlite3.Connection, base_currency: str = "USD") -> int:
         4: _migration_4_money_constraints,
         5: migrate_transaction_audit,
         6: migrate_reconciliation,
+        7: migrate_query_indexes,
     }
     for version in range(current + 1, LATEST_SCHEMA_VERSION + 1):
         migration = migrations[version]
         with conn:
+            if version >= 7:
+                conn.execute("BEGIN IMMEDIATE")
+                if _schema_version(conn) >= version:
+                    continue
             migration(conn, base_currency)
             conn.execute(
                 "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",

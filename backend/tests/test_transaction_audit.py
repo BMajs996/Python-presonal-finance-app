@@ -6,7 +6,7 @@ from threading import Barrier
 import pytest
 from app.database import FinanceDatabase
 from app.domain.errors import InvalidOperation, NotFound
-from app.migrations import migrate
+from app.migrations import LATEST_SCHEMA_VERSION, migrate
 from app.repositories.finance_repository import FinanceRepository
 from app.schemas import AccountCreate, BudgetCreate, TransactionCreate
 from app.services.backup_service import BackupService
@@ -205,4 +205,4 @@ def test_audit_migration_failure_rolls_back_ddl_and_version(db):
     assert db.conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 4
     assert "deleted_at" not in [row["name"] for row in db.conn.execute("PRAGMA table_info(transactions)")]
     assert not db.conn.execute("SELECT name FROM sqlite_master WHERE name='transaction_audit'").fetchall()
-    assert migrate(db.conn) == 6
+    assert migrate(db.conn) == LATEST_SCHEMA_VERSION

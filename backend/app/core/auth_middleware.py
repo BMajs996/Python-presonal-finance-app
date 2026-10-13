@@ -44,8 +44,17 @@ class ConfiguredHosts:
 
 class OwnerAccessMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
+        from ..database_errors import DatabaseCapacityError
+
         with business_date.snapshot():
-            return await self._dispatch(request, call_next)
+            try:
+                return await self._dispatch(request, call_next)
+            except DatabaseCapacityError:
+                return JSONResponse(
+                    {"detail": "Database is busy. Try again shortly."},
+                    status_code=503,
+                    headers={"Retry-After": "2", "Cache-Control": "no-store"},
+                )
 
     async def _dispatch(self, request, call_next):
         if settings.environment == "production" and request.url.scheme != "https":

@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     app_name: str = "Finance Dashboard API"
     app_version: str = "1.3.0"
     database_url: SecretStr | None = None
+    database_pool_size: int = Field(default=5, ge=1, le=20)
+    database_pool_timeout: float = Field(default=2, ge=0.1, le=10)
+    database_pool_max_waiting: int = Field(default=20, ge=1, le=100)
     database_path: Path = BASE_DIR / "data" / "personal_finance.db"
     frontend_path: Path = BASE_DIR / "frontend"
     environment: Literal["development", "production"] = "development"

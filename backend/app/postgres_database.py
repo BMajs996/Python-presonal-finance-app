@@ -5,7 +5,10 @@ from pathlib import Path
 import psycopg
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict
+from psycopg_pool import ConnectionPool, PoolTimeout, TooManyRequests
 
+from .database_errors import DatabaseCapacityError
+from .migrations_query_indexes import migrate_query_indexes
 from .postgres_connection import WRITE_LOCK, PostgresConnection, record_factory
 
 TABLES = (
@@ -21,13 +24,29 @@ TABLES = (
     "reconciliations",
     "reconciliation_entries",
 )
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def create_schema(connection):
     connection.execute((Path(__file__).with_name("postgres_schema.sql")).read_text())
     connection.execute("CREATE TABLE postgres_schema_migrations (version INTEGER PRIMARY KEY)")
-    connection.execute("INSERT INTO postgres_schema_migrations VALUES (%s)", (SCHEMA_VERSION,))
+    connection.execute("INSERT INTO postgres_schema_migrations VALUES (1)")
+    migrate_schema(connection)
+
+
+def migrate_schema(connection):
+    versions = [
+        row[0]
+        for row in connection.execute(
+            "SELECT version FROM postgres_schema_migrations ORDER BY version"
+        ).fetchall()
+    ]
+    if not versions or versions[-1] > SCHEMA_VERSION or versions != list(range(1, versions[-1] + 1)):
+        raise ValueError("Unsupported PostgreSQL schema version")
+    migrations = {2: migrate_query_indexes}
+    for version in range(versions[-1] + 1, SCHEMA_VERSION + 1):
+        migrations[version](connection)
+        connection.execute("INSERT INTO postgres_schema_migrations VALUES (%s)", (version,))
 
 
 def install_guards(connection):
@@ -42,7 +61,17 @@ def install_guards(connection):
 
 
 class PostgresDatabase:
-    def __init__(self, url: str, base_currency: str = "USD"):
+    def __init__(
+        self,
+        url: str,
+        base_currency: str = "USD",
+        *,
+        pool_size: int = 5,
+        pool_timeout: float = 2,
+        pool_max_waiting: int = 20,
+    ):
+        if not (1 <= pool_size <= 20 and 0.1 <= pool_timeout <= 10 and 1 <= pool_max_waiting <= 100):
+            raise ValueError("Database pool capacity settings are out of bounds")
         self._url = url
         self.base_currency = base_currency
         self.conn = self.connect()
@@ -60,11 +89,7 @@ class PostgresDatabase:
                         (base_currency, datetime.now(UTC).isoformat()),
                     )
                 else:
-                    version_row = self.conn.raw.execute(
-                        "SELECT MAX(version) FROM postgres_schema_migrations"
-                    ).fetchone()
-                    if version_row is None or version_row[0] != SCHEMA_VERSION:
-                        raise ValueError("Unsupported PostgreSQL schema version")
+                    migrate_schema(self.conn.raw)
                 main = self.conn.raw.execute(
                     "SELECT currency FROM accounts WHERE name='Main Account'"
                 ).fetchone()
@@ -73,6 +98,38 @@ class PostgresDatabase:
         except BaseException:
             self.close()
             raise
+        self.pool = ConnectionPool(
+            url,
+            min_size=0,
+            max_size=pool_size,
+            timeout=pool_timeout,
+            max_waiting=pool_max_waiting,
+            num_workers=1,
+            open=False,
+            kwargs={
+                "autocommit": True,
+                "row_factory": record_factory,
+                "connect_timeout": 3,
+                "prepare_threshold": None,
+            },
+            configure=self._configure_connection,
+            reset=self._reset_connection,
+            check=ConnectionPool.check_connection,
+        )
+
+    @staticmethod
+    def _configure_connection(raw):
+        raw.execute("SET lock_timeout = '10s'; SET statement_timeout = '60s'")
+
+    @classmethod
+    def _reset_connection(cls, raw):
+        raw.rollback()
+        raw.autocommit = True
+        # Drop temporary objects, session locks, roles and session-local settings.
+        # Server-side prepare is disabled so DISCARD cannot invalidate a driver cache.
+        raw.execute("DISCARD ALL")
+        raw.row_factory = record_factory
+        cls._configure_connection(raw)
 
     def connect(self) -> PostgresConnection:
         raw = psycopg.connect(self._url, autocommit=True, row_factory=record_factory, connect_timeout=10)
@@ -82,12 +139,20 @@ class PostgresDatabase:
 
     @contextmanager
     def connection(self):
-        connection = self.connect()
+        self.pool.open()
+        try:
+            raw = self.pool.getconn()
+        except (PoolTimeout, TooManyRequests) as exc:
+            raise DatabaseCapacityError("Database capacity temporarily unavailable") from exc
+        connection = PostgresConnection(raw)
         try:
             yield connection
         finally:
-            connection.rollback()
-            connection.close()
+            try:
+                if not raw.closed:
+                    raw.rollback()
+            finally:
+                self.pool.putconn(raw)
 
     @contextmanager
     def operational_transaction(self):
@@ -98,6 +163,8 @@ class PostgresDatabase:
 
     def close(self):
         self.conn.close()
+        if hasattr(self, "pool"):
+            self.pool.close()
 
     def check_ready(self) -> bool:
         from .services.health_service import SCHEMA_PROBE

@@ -28,3 +28,4 @@ htmlcov/
 node_modules/
 playwright-report/
 test-results/
+benchmark-results/

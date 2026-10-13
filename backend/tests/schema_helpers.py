@@ -2,6 +2,11 @@
 
 
 def remove_reconciliation(conn):
+    from app.migrations_query_indexes import INDEXES
+
+    for name in INDEXES:
+        conn.execute("DROP INDEX " + name)
+    conn.execute("DELETE FROM schema_migrations WHERE version=7")
     for row in conn.execute(
         "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'reconciliation_%'"
     ).fetchall():
