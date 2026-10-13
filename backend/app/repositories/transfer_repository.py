@@ -15,11 +15,11 @@ class TransferRepository(BaseRepository):
             FROM transfers t
             JOIN accounts f ON f.id=t.from_account_id
             JOIN accounts to_a ON to_a.id=t.to_account_id
-            WHERE t.date<=?
+            WHERE t.date<=? AND f.user_id=? AND to_a.user_id=f.user_id
             ORDER BY t.date DESC, t.id DESC
             LIMIT ? OFFSET ?
             """,
-            (business_date.today().isoformat(), limit, offset),
+            (business_date.today().isoformat(), self.user_id, limit, offset),
         ).fetchall()
         return [self._serialize(row) for row in rows]
 
@@ -31,9 +31,9 @@ class TransferRepository(BaseRepository):
             FROM transfers t
             JOIN accounts f ON f.id=t.from_account_id
             JOIN accounts to_a ON to_a.id=t.to_account_id
-            WHERE t.id=?
+            WHERE t.id=? AND f.user_id=? AND to_a.user_id=f.user_id
             """,
-            (transfer_id,),
+            (transfer_id, self.user_id),
         ).fetchone()
         return self._serialize(row) if row else None
 
@@ -71,7 +71,11 @@ class TransferRepository(BaseRepository):
 
     def delete(self, transfer_id: int):
         with self.conn:
-            self.conn.execute("DELETE FROM transfers WHERE id=?", (transfer_id,))
+            self.conn.execute(
+                "DELETE FROM transfers WHERE id=? "
+                "AND from_account_id IN (SELECT id FROM accounts WHERE user_id=?)",
+                (transfer_id, self.user_id),
+            )
 
     @staticmethod
     def _serialize(row):

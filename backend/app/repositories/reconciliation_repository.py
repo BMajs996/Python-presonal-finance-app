@@ -7,13 +7,15 @@ from .base_repository import BaseRepository
 
 class ReconciliationRepository(BaseRepository):
     def accounts(self):
-        return AccountRepository(self.conn, self.base_currency).list(include_inactive=True)
+        return AccountRepository(self.conn, self.base_currency, user_id=self.user_id).list(
+            include_inactive=True
+        )
 
     def get(self, ident: int):
         row = self.conn.execute(
             """SELECT r.*, a.name AS account_name, a.currency FROM reconciliations r
-            JOIN accounts a ON a.id=r.account_id WHERE r.id=?""",
-            (ident,),
+            JOIN accounts a ON a.id=r.account_id WHERE r.id=? AND a.user_id=?""",
+            (ident, self.user_id),
         ).fetchone()
         if row is None:
             raise NotFound("Statement not found")
@@ -25,13 +27,13 @@ class ReconciliationRepository(BaseRepository):
             for row in self.conn.execute(
                 """SELECT r.*, a.currency FROM reconciliations r
                 JOIN accounts a ON a.id=r.account_id
-                WHERE r.account_id=? ORDER BY r.closing_date DESC, r.id DESC""",
-                (account_id,),
+                WHERE r.account_id=? AND a.user_id=? ORDER BY r.closing_date DESC, r.id DESC""",
+                (account_id, self.user_id),
             )
         ]
 
-    @staticmethod
-    def _parameters(statement):
+    def _parameters(self, statement):
+        statement = self.get(statement["id"])
         return (statement["account_id"], statement["closing_date"], statement["id"], statement["status"])
 
     ELIGIBLE = """
@@ -79,12 +81,14 @@ class ReconciliationRepository(BaseRepository):
         )
 
     def latest(self, account_id):
+        self.account_currency(account_id)
         return self.conn.execute(
             "SELECT * FROM reconciliations WHERE account_id=? ORDER BY closing_date DESC,id DESC LIMIT 1",
             (account_id,),
         ).fetchone()
 
     def has_draft(self, account_id):
+        self.account_currency(account_id)
         return (
             self.conn.execute(
                 "SELECT 1 FROM reconciliations WHERE account_id=? AND status='draft' LIMIT 1",
@@ -94,6 +98,7 @@ class ReconciliationRepository(BaseRepository):
         )
 
     def create(self, account_id: int, closing_date: str, opening: int, closing: int):
+        self.resolve_account_id(account_id)
         cursor = self.conn.execute(
             """INSERT INTO reconciliations(account_id, closing_date, opening_balance_cents,
             closing_balance_cents) VALUES (?, ?, ?, ?) RETURNING id""",
@@ -102,6 +107,9 @@ class ReconciliationRepository(BaseRepository):
         return self.inserted_id(cursor)
 
     def clear(self, statement, kind: str, entry_id: int, cleared: bool):
+        statement = self.get(statement["id"])
+        if not self.eligible(statement, kind, entry_id):
+            raise NotFound("Entry not found")
         transaction_id = entry_id if kind == "transaction" else None
         transfer_id = entry_id if kind == "transfer" else None
         if cleared:
@@ -119,6 +127,7 @@ class ReconciliationRepository(BaseRepository):
             )
 
     def complete(self, ident: int):
+        self.get(ident)
         self.conn.execute(
             """UPDATE reconciliations SET status='completed',
             completed_at=? WHERE id=?""",
@@ -126,5 +135,6 @@ class ReconciliationRepository(BaseRepository):
         )
 
     def cancel(self, ident: int):
+        self.get(ident)
         self.conn.execute("DELETE FROM reconciliation_entries WHERE reconciliation_id=?", (ident,))
         self.conn.execute("DELETE FROM reconciliations WHERE id=?", (ident,))

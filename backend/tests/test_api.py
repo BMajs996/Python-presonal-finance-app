@@ -103,7 +103,7 @@ def test_domain_errors_keep_detail_contract_and_status_codes(client):
             "account_id": 99999,
         },
     )
-    assert invalid.status_code == 400
+    assert invalid.status_code == 404
     assert isinstance(invalid.json()["detail"], str)
     assert client.delete("/api/transactions/99999").json() == {"detail": "Transaction not found"}
     assert client.delete("/api/accounts/99999").status_code == 404

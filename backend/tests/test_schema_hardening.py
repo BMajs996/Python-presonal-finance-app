@@ -102,7 +102,7 @@ def test_version_three_upgrade_preserves_rows_relationships_and_indexes(populate
     tables = [table for table, _, _ in MONEY_COLUMNS] + ["recurring_occurrences"]
     before = {
         table: [
-            {k: row[k] for k in row.keys() if k != "deleted_at"}
+            {k: row[k] for k in row.keys() if k not in {"deleted_at", "user_id"}}
             for row in conn.execute(f"SELECT * FROM {table} ORDER BY rowid")
         ]
         for table in tables
@@ -118,7 +118,7 @@ def test_version_three_upgrade_preserves_rows_relationships_and_indexes(populate
     assert migrate(conn) == LATEST_SCHEMA_VERSION
     for table in tables:
         assert [
-            {k: row[k] for k in row.keys() if k != "deleted_at"}
+            {k: row[k] for k in row.keys() if k not in {"deleted_at", "user_id"}}
             for row in conn.execute(f"SELECT * FROM {table} ORDER BY rowid")
         ] == before[table]
     upgraded_indexes = dict(
@@ -129,7 +129,7 @@ def test_version_three_upgrade_preserves_rows_relationships_and_indexes(populate
         )
     )
     # New migrations may add indexes, but must preserve every historical definition.
-    assert all(upgraded_indexes[row["name"]] == row["sql"] for row in indexes)
+    assert all(upgraded_indexes[row["name"]] == row["sql"] for row in indexes if row["sql"] is not None)
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     with populated.database.connection() as another:
         with pytest.raises(sqlite3.IntegrityError):

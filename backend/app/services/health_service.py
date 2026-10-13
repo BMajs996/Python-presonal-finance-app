@@ -5,7 +5,7 @@ from collections.abc import Callable
 from threading import Lock
 
 SCHEMA_PROBE = """
-    SELECT (SELECT currency FROM accounts WHERE name='Main Account') AS currency,
+    SELECT (SELECT currency FROM accounts WHERE user_id=1 AND name='Main Account') AS currency,
            (SELECT MAX(version) FROM {migration_table}) AS version,
            EXISTS(SELECT amount_cents, date, deleted_at FROM transactions WHERE 1=0),
            EXISTS(SELECT next_date, active, account_id FROM recurring_transactions WHERE 1=0),
@@ -13,12 +13,15 @@ SCHEMA_PROBE = """
            EXISTS(SELECT amount_cents FROM transfers WHERE 1=0),
            EXISTS(SELECT monthly_limit_cents FROM budgets WHERE 1=0),
            EXISTS(SELECT opening_balance_cents, active FROM accounts WHERE 1=0),
-           EXISTS(SELECT token_hash FROM auth_sessions WHERE 1=0),
+           EXISTS(SELECT token_hash, user_id, auth_version, session_id FROM auth_sessions WHERE 1=0),
            EXISTS(SELECT attempts FROM auth_login_limit WHERE 1=0),
            EXISTS(SELECT attempts FROM auth_source_limits WHERE 1=0),
            EXISTS(SELECT transaction_id, action FROM transaction_audit WHERE 1=0),
            EXISTS(SELECT closing_balance_cents FROM reconciliations WHERE 1=0),
-           EXISTS(SELECT reconciliation_id FROM reconciliation_entries WHERE 1=0)
+           EXISTS(SELECT reconciliation_id FROM reconciliation_entries WHERE 1=0),
+           EXISTS(SELECT email_key, phone, active, username, password_hash, auth_version
+                  FROM users WHERE 1=0),
+           EXISTS(SELECT user_id FROM budgets WHERE 1=0)
 """
 
 

@@ -4,11 +4,13 @@ import { existsSync } from "node:fs";
 
 export const test = base.extend({
   ledgerScenario: [false, { option: true }],
-  appURL: async ({ ledgerScenario }, use) => {
+  accountScenario: [false, { option: true }],
+  appURL: async ({ ledgerScenario, accountScenario }, use) => {
     const python = process.env.E2E_PYTHON || (existsSync(".venv/bin/python") ? ".venv/bin/python" : "python");
     const child = spawn(python, ["tests/e2e/server.py"], {
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, E2E_LEDGER_SCENARIO: ledgerScenario ? "1" : "" },
+      env: { ...process.env, E2E_LEDGER_SCENARIO: ledgerScenario ? "1" : "",
+        E2E_ACCOUNT_SCENARIO: accountScenario ? "1" : "" },
     });
     let output = "";
     let errors = "";

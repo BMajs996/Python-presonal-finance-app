@@ -1,3 +1,4 @@
+from ..domain.errors import NotFound
 from .account_repository import AccountRepository
 from .balance_repository import BalanceRepository
 from .budget_repository import BudgetRepository
@@ -10,23 +11,27 @@ from .transfer_repository import TransferRepository
 class FinanceRepository:
     """Compatibility facade over feature-owned repositories."""
 
-    def __init__(self, database, base_currency: str = "USD", *, connection=None):
+    def __init__(self, database, base_currency: str = "USD", *, connection=None, user_id: int = 1):
         self.database = database
         connection = database.conn if connection is None else connection
         self.conn = connection
         self.base_currency = base_currency
-        main_currency = connection.execute(
-            "SELECT currency FROM accounts WHERE name='Main Account'"
-        ).fetchone()["currency"]
+        self.user_id = user_id
+        main = connection.execute(
+            "SELECT currency FROM accounts WHERE user_id=? AND name='Main Account'", (user_id,)
+        ).fetchone()
+        if main is None:
+            raise NotFound("Financial owner not found")
+        main_currency = main["currency"]
         if main_currency != base_currency:
             raise ValueError(f"BASE_CURRENCY is {base_currency}, but Main Account uses {main_currency}")
-        self.accounts = AccountRepository(connection, base_currency)
-        self.balances = BalanceRepository(connection, base_currency)
-        self.budgets = BudgetRepository(connection, base_currency)
-        self.recurring_transactions = RecurringRepository(connection, base_currency)
-        self.reports = ReportRepository(connection, base_currency)
-        self.transactions = TransactionRepository(connection, base_currency)
-        self.transfers = TransferRepository(connection, base_currency)
+        self.accounts = AccountRepository(connection, base_currency, user_id=user_id)
+        self.balances = BalanceRepository(connection, base_currency, user_id=user_id)
+        self.budgets = BudgetRepository(connection, base_currency, user_id=user_id)
+        self.recurring_transactions = RecurringRepository(connection, base_currency, user_id=user_id)
+        self.reports = ReportRepository(connection, base_currency, user_id=user_id)
+        self.transactions = TransactionRepository(connection, base_currency, user_id=user_id)
+        self.transfers = TransferRepository(connection, base_currency, user_id=user_id)
 
     def list_transactions(self, *args, **kwargs):
         return self.transactions.list(*args, **kwargs)

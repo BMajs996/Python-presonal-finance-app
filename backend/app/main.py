@@ -102,6 +102,16 @@ def login_page():
     return frontend_page(settings.frontend_path, "login.html", asset_revision)
 
 
+@app.get("/register", include_in_schema=False)
+def registration_page():
+    return frontend_page(settings.frontend_path, "register.html", asset_revision)
+
+
+@app.get("/reset-password", include_in_schema=False)
+def recovery_page():
+    return frontend_page(settings.frontend_path, "reset-password.html", asset_revision)
+
+
 @app.get("/")
 def index():
     return frontend_page(settings.frontend_path, "index.html", asset_revision)

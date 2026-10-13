@@ -80,6 +80,23 @@ def test_deactivation_requires_pausing_or_moving_every_active_schedule(database)
 def test_legacy_invalid_schedule_is_paused_without_entries_or_reassignment(database, caplog, missing_account):
     ident = account(database)
     broken = schedule(database.conn, ident)
+    if missing_account:
+        import sqlite3
+
+        import psycopg
+
+        with pytest.raises((sqlite3.IntegrityError, psycopg.errors.CheckViolation)):
+            with database.conn:
+                database.conn.execute(
+                    "UPDATE recurring_transactions SET account_id=NULL WHERE id=?", (broken["id"],)
+                )
+        assert (
+            database.conn.execute(
+                "SELECT account_id FROM recurring_transactions WHERE id=?", (broken["id"],)
+            ).fetchone()[0]
+            == ident
+        )
+        return
     # Simulate data predating the guard, including an orphan with a null reference.
     with database.conn:
         if missing_account:

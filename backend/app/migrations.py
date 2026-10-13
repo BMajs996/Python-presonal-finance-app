@@ -7,11 +7,13 @@ existing desktop-era database without requiring a separate migration command.
 import sqlite3
 from datetime import UTC, datetime
 
+from .migrations_ownership import migrate_ownership
 from .migrations_query_indexes import migrate_query_indexes
 from .migrations_reconciliation import migrate_reconciliation
 from .migrations_transaction_audit import migrate_transaction_audit
+from .migrations_user_accounts import migrate_user_accounts
 
-LATEST_SCHEMA_VERSION = 7
+LATEST_SCHEMA_VERSION = 9
 
 MONEY_COLUMNS = (
     ("transactions", "amount", "amount_cents"),
@@ -213,18 +215,29 @@ def migrate(conn: sqlite3.Connection, base_currency: str = "USD") -> int:
         5: migrate_transaction_audit,
         6: migrate_reconciliation,
         7: migrate_query_indexes,
+        8: migrate_ownership,
+        9: migrate_user_accounts,
     }
     for version in range(current + 1, LATEST_SCHEMA_VERSION + 1):
         migration = migrations[version]
-        with conn:
-            if version >= 7:
-                conn.execute("BEGIN IMMEDIATE")
-                if _schema_version(conn) >= version:
-                    continue
-            migration(conn, base_currency)
-            conn.execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
-                (version, datetime.now(UTC).isoformat()),
-            )
+        rebuild = version == 8
+        if rebuild:
+            conn.execute("PRAGMA foreign_keys=OFF")
+            conn.execute("PRAGMA legacy_alter_table=ON")
+        try:
+            with conn:
+                if version >= 7:
+                    conn.execute("BEGIN IMMEDIATE")
+                    if _schema_version(conn) >= version:
+                        continue
+                migration(conn, base_currency)
+                conn.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                    (version, datetime.now(UTC).isoformat()),
+                )
+        finally:
+            if rebuild:
+                conn.execute("PRAGMA legacy_alter_table=OFF")
+                conn.execute("PRAGMA foreign_keys=ON")
 
     return LATEST_SCHEMA_VERSION

@@ -11,11 +11,11 @@ from .transaction_repository import TransactionRepository
 
 
 class ReportRepository(BaseRepository):
-    def __init__(self, connection, base_currency: str = "USD"):
-        super().__init__(connection, base_currency)
-        self.accounts = AccountRepository(connection, base_currency)
-        self.budgets = BudgetRepository(connection, base_currency)
-        self.transactions = TransactionRepository(connection, base_currency)
+    def __init__(self, connection, base_currency: str = "USD", *, user_id: int = 1):
+        super().__init__(connection, base_currency, user_id=user_id)
+        self.accounts = AccountRepository(connection, base_currency, user_id=user_id)
+        self.budgets = BudgetRepository(connection, base_currency, user_id=user_id)
+        self.transactions = TransactionRepository(connection, base_currency, user_id=user_id)
 
     def dashboard_data(self, period: DateRange):
         days = period.days
@@ -36,11 +36,11 @@ class ReportRepository(BaseRepository):
                 FROM transactions t
                 JOIN accounts a ON a.id=t.account_id
                 WHERE t.deleted_at IS NULL AND t.type='expense' AND a.currency=?
-                  AND t.date BETWEEN ? AND ?
+                  AND t.date BETWEEN ? AND ? AND a.user_id=?
                 GROUP BY t.category
                 ORDER BY total_cents DESC
                 """,
-                (self.base_currency, period.start_iso, period.end_iso),
+                (self.base_currency, period.start_iso, period.end_iso, self.user_id),
             )
         ]
         recent = self.transactions.recent(limit=8)
@@ -82,10 +82,10 @@ class ReportRepository(BaseRepository):
             SELECT t.type, COALESCE(SUM(t.amount_cents),0) total_cents
             FROM transactions t
             JOIN accounts a ON a.id=t.account_id
-            WHERE t.deleted_at IS NULL AND a.currency=? AND t.date BETWEEN ? AND ?
+            WHERE t.deleted_at IS NULL AND a.currency=? AND t.date BETWEEN ? AND ? AND a.user_id=?
             GROUP BY t.type
             """,
-            (self.base_currency, period.start_iso, period.end_iso),
+            (self.base_currency, period.start_iso, period.end_iso, self.user_id),
         ):
             summary[row["type"]] = int(row["total_cents"] or 0)
         return summary
@@ -121,11 +121,11 @@ class ReportRepository(BaseRepository):
                    SUM(CASE WHEN t.type='expense' THEN t.amount_cents ELSE 0 END) expense_cents
             FROM transactions t
             JOIN accounts a ON a.id=t.account_id
-            WHERE t.deleted_at IS NULL AND t.date >= ? AND t.date<=? AND a.currency=?
+            WHERE t.deleted_at IS NULL AND t.date >= ? AND t.date<=? AND a.currency=? AND a.user_id=?
             GROUP BY month
             ORDER BY month
             """,
-            (start_month + "-01", business_date.today().isoformat(), self.base_currency),
+            (start_month + "-01", business_date.today().isoformat(), self.base_currency, self.user_id),
         ).fetchall()
         for row in rows:
             if row["month"] not in monthly:
@@ -152,12 +152,12 @@ class ReportRepository(BaseRepository):
             JOIN accounts a ON a.id=t.account_id
             WHERE t.deleted_at IS NULL AND t.type='expense'
               AND t.date >= ? AND t.date<=?
-              AND a.currency=?
+              AND a.currency=? AND a.user_id=?
             GROUP BY t.category
             ORDER BY total_cents DESC
             LIMIT 10
             """,
-            (start_month + "-01", business_date.today().isoformat(), self.base_currency),
+            (start_month + "-01", business_date.today().isoformat(), self.base_currency, self.user_id),
         ).fetchall()
         top_categories = [
             {
@@ -228,13 +228,19 @@ class ReportRepository(BaseRepository):
             WHERE t.deleted_at IS NULL AND t.type='expense'
               AND t.date >= ? AND t.date<=?
               AND t.category IN ({placeholders})
-              AND a.currency=?
+              AND a.currency=? AND a.user_id=?
             GROUP BY month, t.category
             """
         return {
             (row["month"], row["category"]): int(row["total_cents"] or 0)
             for row in self.conn.execute(
                 trend_sql,
-                (start_month + "-01", business_date.today().isoformat(), *categories, self.base_currency),
+                (
+                    start_month + "-01",
+                    business_date.today().isoformat(),
+                    *categories,
+                    self.base_currency,
+                    self.user_id,
+                ),
             ).fetchall()
         }

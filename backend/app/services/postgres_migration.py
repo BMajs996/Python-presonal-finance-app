@@ -59,7 +59,9 @@ def _transfer_locked(source_path: Path, target_url: str, currency: str, *, commi
             }
             if names - AUTH_TABLES != set(TABLES):
                 raise ValueError("SQLite source has unsupported tables; nothing was copied")
-            main = source.conn.execute("SELECT currency FROM accounts WHERE name='Main Account'").fetchone()
+            main = source.conn.execute(
+                "SELECT currency FROM accounts WHERE user_id=1 AND name='Main Account'"
+            ).fetchone()
             if main is None or main[0] != currency:
                 raise ValueError("Source currency does not match BASE_CURRENCY")
             with psycopg.connect(target_url, autocommit=True, row_factory=record_factory) as target:
@@ -71,6 +73,7 @@ def _transfer_locked(source_path: Path, target_url: str, currency: str, *, commi
                     ).fetchone():
                         raise ValueError("PostgreSQL destination schema must be empty")
                     create_schema(target)
+                    target.execute("DELETE FROM users")
                     counts = {}
                     digest = hashlib.sha256()
                     for table in TABLES:

@@ -9,10 +9,12 @@ import { loadReferenceData } from "./views/reference-data.js";
 import { initReportsView, loadReports } from "./views/reports.js";
 import { initTransactionsView, loadTransactions } from "./views/transactions.js";
 import { initTransfersView, loadTransfers } from "./views/transfers.js";
+import { initProfileView, loadProfile } from "./views/profile.js";
 
 import { initReconciliationView, loadReconciliation } from "./views/reconciliation.js";
 
 const viewTitles = {
+  profile: "Profile",
   reconciliation: "Reconciliation",
   dashboard: "Dashboard",
   transactions: "Transactions",
@@ -24,6 +26,7 @@ const viewTitles = {
 };
 
 const viewLoaders = {
+  profile: loadProfile,
   reconciliation: loadReconciliation,
   dashboard: loadDashboard,
   transactions: loadTransactions,
@@ -78,10 +81,12 @@ initBudgetsView({ refresh });
 initReportsView();
 initAccountsView({ refresh });
 initTransfersView({ refresh });
+initProfileView();
 
 async function start() {
   const session = await request("/api/auth/session");
   setCSRFToken(session.csrf_token);
+  $("signed-in-name").textContent = session.display_name || session.username;
   $("logout-btn").addEventListener("click", async () => {
     try {
       await request("/api/auth/logout", { method: "POST" });

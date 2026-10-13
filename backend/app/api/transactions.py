@@ -98,7 +98,11 @@ def delete_transaction(transaction_id: int, service: FinanceService = Depends(ge
 def get_csv_service(request: Request):
     database = request.app.state.database
     with database.connection() as connection:
-        yield CsvImportService(TransactionRepository(connection, database.base_currency))
+        yield CsvImportService(
+            TransactionRepository(
+                connection, database.base_currency, user_id=request.state.owner_session["user_id"]
+            )
+        )
 
 
 @router.post("/import/preview", response_model=CsvPreview)
