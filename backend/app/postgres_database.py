@@ -138,8 +138,11 @@ class PostgresDatabase:
 
     def connect(self) -> PostgresConnection:
         raw = psycopg.connect(self._url, autocommit=True, row_factory=record_factory, connect_timeout=10)
-        raw.execute("SET lock_timeout = '10s'")
-        raw.execute("SET statement_timeout = '60s'")
+        try:
+            self._configure_connection(raw)
+        except BaseException:
+            raw.close()
+            raise
         return PostgresConnection(raw)
 
     @contextmanager

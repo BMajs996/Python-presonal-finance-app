@@ -1,3 +1,4 @@
+import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -17,6 +18,42 @@ from .postgres_helpers import pg_url as pg_url
 
 PASSWORD = "synthetic-member-password"
 NEW_PASSWORD = "synthetic-replacement-password"
+
+
+def test_auth_expiry_cleanup_uses_indexes_on_both_backends(database):
+    queries = (
+        ("auth_source_limits", "window_start", "idx_auth_source_limits_window"),
+        ("auth_account_limits", "window_start", "idx_auth_account_limits_window"),
+        ("auth_sessions", "expires_at", "idx_sessions_expires_at"),
+        ("auth_sessions", "last_seen", "idx_sessions_last_seen"),
+    )
+    with database.connection() as connection, connection:
+        for table, _column, _index in queries[:2]:
+            for i in range(2000):
+                connection.execute(f"INSERT INTO {table} VALUES (?,?,1)", (str(i), 0 if i < 5 else 10000))
+        for i in range(2000):
+            connection.execute(
+                "INSERT INTO auth_sessions VALUES (?, 'csrf', 'key', ?, ?, 1, 0, ?, 0)",
+                (str(i), 0 if i < 5 else 10000, 0 if i < 5 else 10000, str(i)),
+            )
+        for table in ("auth_source_limits", "auth_account_limits", "auth_sessions"):
+            connection.execute(f"ANALYZE {table}")
+        postgres = isinstance(database, PostgresDatabase)
+        for table, column, index in queries:
+            explain = "EXPLAIN (FORMAT JSON) " if postgres else "EXPLAIN QUERY PLAN "
+            plan = connection.execute(explain + f"DELETE FROM {table} WHERE {column}<=?", (1,)).fetchall()
+            details = json.dumps(plan[0][0]) if postgres else str([tuple(row) for row in plan])
+            assert index in details
+
+
+def test_auth_index_initialization_is_idempotent_and_preserves_sessions(database):
+    from .conftest import TEST_PASSWORD
+
+    service = AuthService(database)
+    token, _csrf = service.login("owner", TEST_PASSWORD, None, "synthetic-source")
+    initialize_auth(database)
+    initialize_auth(database)
+    assert service.session(token)["user_id"] == 1
 
 
 @pytest.fixture(params=["sqlite", "postgres"])

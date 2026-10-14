@@ -278,7 +278,7 @@ def test_transfer_blocks_source_writers(pg_url, db, monkeypatch):
 
     monkeypatch.setattr(postgres_migration, "install_guards", check_lock)
     transfer_sqlite(Path(db.database.db_path), pg_url, "USD")
-    with sqlite3.connect(db.database.db_path, timeout=0) as writer:
+    with closing(sqlite3.connect(db.database.db_path, timeout=0)) as writer, writer:
         writer.execute("BEGIN IMMEDIATE")
 
 

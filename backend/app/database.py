@@ -36,10 +36,14 @@ class FinanceDatabase:
             check_same_thread=False,
             isolation_level="IMMEDIATE",
         )
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute(f"PRAGMA busy_timeout = {self.busy_timeout_ms}")
-        connection.execute("PRAGMA journal_mode = WAL")
+        try:
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute(f"PRAGMA busy_timeout = {self.busy_timeout_ms}")
+            connection.execute("PRAGMA journal_mode = WAL")
+        except BaseException:
+            connection.close()
+            raise
         return connection
 
     @contextmanager
