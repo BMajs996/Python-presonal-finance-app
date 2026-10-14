@@ -13,6 +13,14 @@ export async function loadProfile() {
   $("profile-identity").textContent = `${profile.username} (${profile.is_admin ? "Administrator" : "Member"})`;
   $("profile-email-state").textContent = profile.email_verified_at ? "Verified" : "Unverified";
   $("profile-phone-state").textContent = profile.phone_verified_at ? "Verified" : "Unverified";
+  renderSessions(sessions);
+}
+
+async function loadSessions() {
+  renderSessions(await request("/api/auth/sessions"));
+}
+
+function renderSessions(sessions) {
   const table = $("profile-sessions");
   table.replaceChildren();
   for (const session of sessions) {
@@ -34,7 +42,7 @@ export async function loadProfile() {
       try {
         await request(`/api/auth/sessions/${encodeURIComponent(session.session_id)}`, { method: "DELETE" });
         if (session.current) window.location.replace("/login");
-        else await loadProfile();
+        else await loadSessions();
       } catch (error) { reportError(error); button.disabled = false; }
     });
     cell.append(button);
@@ -80,7 +88,7 @@ export function initProfileView() {
     button.disabled = true;
     try {
       await request("/api/auth/sessions/revoke-others", { method: "POST" });
-      await loadProfile();
+      await loadSessions();
     } catch (error) { reportError(error); }
     finally { button.disabled = false; }
   });

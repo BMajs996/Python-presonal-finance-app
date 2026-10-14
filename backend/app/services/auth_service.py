@@ -90,6 +90,9 @@ def initialize_auth(database):
                 f"CREATE TABLE IF NOT EXISTS {table} "
                 f"({column} TEXT PRIMARY KEY, window_start BIGINT NOT NULL, attempts INTEGER NOT NULL)"
             )
+            connection.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_window ON {table}(window_start)")
+        for column in ("expires_at", "last_seen"):
+            connection.execute(f"CREATE INDEX IF NOT EXISTS idx_sessions_{column} ON auth_sessions({column})")
         connection.execute("""CREATE TABLE IF NOT EXISTS auth_codes (
             token_hash TEXT PRIMARY KEY, purpose TEXT NOT NULL CHECK(purpose IN ('invite','reset')),
             target_key TEXT NOT NULL, user_id BIGINT REFERENCES users(id) ON DELETE RESTRICT,

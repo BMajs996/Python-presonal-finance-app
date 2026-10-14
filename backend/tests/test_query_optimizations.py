@@ -10,9 +10,10 @@ from app.domain.errors import Conflict
 from app.migrations_query_indexes import INDEXES
 from app.postgres_database import PostgresDatabase
 from app.repositories.account_repository import AccountRepository
+from app.repositories.budget_repository import BudgetRepository
 from app.repositories.finance_repository import FinanceRepository
 from app.repositories.transaction_repository import TransactionRepository
-from app.schemas import AccountCreate, CsvImport, RecurringCreate, TransactionCreate
+from app.schemas import AccountCreate, BudgetCreate, CsvImport, RecurringCreate, TransactionCreate
 from app.services.csv_import_service import CsvImportService
 
 from .postgres_helpers import pg_url as pg_url
@@ -283,3 +284,67 @@ def test_query_indexes_are_installed(repo):
             for row in repo.conn.execute("SELECT name FROM sqlite_master WHERE type='index'").fetchall()
         }
     assert set(INDEXES) <= names
+
+
+def test_budget_writes_only_read_the_affected_budget(repo):
+    budgets = [
+        repo.add_budget(BudgetCreate(category=f"Category {i}", monthly_limit="100")) for i in range(12)
+    ]
+    for budget in budgets:
+        repo.add_transaction(row(category=budget["category"]))
+    connection = CountingConnection(repo.conn)
+    repository = BudgetRepository(connection)
+    updated = repository.update(budgets[0]["id"], BudgetCreate(category="Category 0", monthly_limit="200"))
+    assert updated["money"]["values"]["spent"] == "12.34"
+    assert updated["monthly_limit"] == 200
+    assert len(connection.queries) == 2
+    assert "AND b.id=?" in connection.queries[-1]
+    assert "user_id=b.user_id" not in connection.queries[-1]
+    connection.queries.clear()
+    upsert = repository.add(BudgetCreate(category="Category 0", monthly_limit="300"))
+    assert upsert["id"] == budgets[0]["id"]
+    assert len(connection.queries) == 2
+    assert "AND b.id=?" in connection.queries[-1]
+    connection.queries.clear()
+    assert repository.update(99999, BudgetCreate(category="Missing", monthly_limit="1")) is None
+    assert len(connection.queries) == 1
+
+
+def test_targeted_budget_usage_avoids_unrelated_aggregation(db):
+    budgets = [db.add_budget(BudgetCreate(category=f"Category {i}", monthly_limit="100")) for i in range(12)]
+    for budget in budgets:
+        for _ in range(20):
+            db.add_transaction(row(category=budget["category"]))
+    visited = []
+
+    class CountingSum:
+        def __init__(self):
+            self.total = 0
+
+        def step(self, value):
+            if value is not None:
+                visited.append(value)
+                self.total += value
+
+        def finalize(self):
+            return self.total
+
+    db.conn.create_aggregate("SUM", 1, CountingSum)
+    assert len(db.budgets.usage()) == 12
+    assert len(visited) == 240
+    visited.clear()
+    db.update_budget(budgets[0]["id"], BudgetCreate(category="Category 0", monthly_limit="200"))
+    assert len(visited) == 20
+
+
+def test_budget_deleted_before_update_response_remains_a_missing_result(repo, monkeypatch):
+    budget = repo.add_budget(BudgetCreate(category="Food", monthly_limit="100"))
+    usage = repo.budgets.usage
+
+    def delete_before_read(budget_id):
+        repo.budgets.delete(budget_id)
+        return usage(budget_id)
+
+    monkeypatch.setattr(repo.budgets, "usage", delete_before_read)
+    assert repo.update_budget(budget["id"], BudgetCreate(category="Food", monthly_limit="200")) is None
+    assert usage(budget["id"]) == []

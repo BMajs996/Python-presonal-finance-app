@@ -1,4 +1,5 @@
 import { test, expect, navigateTo } from "./fixtures.js";
+import { request } from "@playwright/test";
 
 test.use({ accountScenario: true });
 const password = "synthetic-member-password";
@@ -113,4 +114,61 @@ test("administrator-issued recovery link resets a member once and invalidates ol
     token: recovery.token, password: replacement,
   } })).status()).toBe(400);
   await signIn(page, appURL, replacement);
+});
+
+test("session controls preserve profile drafts and invalidate only selected sessions", async ({ page, appURL }) => {
+  await page.context().setExtraHTTPHeaders({ Origin: appURL });
+  // A separate request context has its own cookie jar, like another device.
+  const other = await request.newContext({ baseURL: appURL, extraHTTPHeaders: { Origin: appURL } });
+  try {
+    const login = () => other.post("/api/auth/login", { data: {
+      username: "owner", password: "synthetic-owner-password",
+    } });
+    expect((await login()).status()).toBe(200);
+    await navigateTo(page, "profile");
+    await expect(page.locator("#profile-sessions tr")).toHaveCount(2);
+    const profile = page.locator("#profile-form");
+    await profile.getByLabel("Name", { exact: true }).fill("Unsaved profile draft");
+    await page.locator("#profile-sessions tr").filter({ hasText: "Other" })
+      .getByRole("button", { name: "Sign out" }).click();
+    await expect(page.locator("#profile-sessions tr")).toHaveCount(1);
+    await expect(profile.getByLabel("Name", { exact: true })).toHaveValue("Unsaved profile draft");
+    expect((await other.get("/api/auth/session")).status()).toBe(401);
+    expect((await login()).status()).toBe(200);
+    await page.getByRole("button", { name: "Sign out other sessions" }).click();
+    await expect(page.locator("#profile-sessions tr")).toHaveCount(1);
+    await expect(profile.getByLabel("Name", { exact: true })).toHaveValue("Unsaved profile draft");
+    expect((await other.get("/api/auth/session")).status()).toBe(401);
+    expect((await page.request.get(appURL + "/api/auth/session")).status()).toBe(200);
+    await page.locator("#profile-sessions tr").getByRole("button", { name: "Sign out" }).click();
+    await expect(page).toHaveURL(appURL + "/login");
+    expect((await page.request.get(appURL + "/api/auth/session")).status()).toBe(401);
+  } finally { await other.dispose(); }
+});
+
+test("failed profile saves retain input and session refresh does not discard it", async ({ page, appURL }) => {
+  await page.context().setExtraHTTPHeaders({ Origin: appURL });
+  await navigateTo(page, "profile");
+  const profile = page.locator("#profile-form");
+  await profile.getByLabel("Name", { exact: true }).fill("Retained name");
+  await profile.getByLabel("Email", { exact: true }).fill("owner@example.com");
+  await profile.getByLabel("Phone (international)").fill("+381641234567");
+  await profile.getByLabel("Current password").fill("synthetic-owner-password");
+  await page.route("**/api/auth/profile", route => route.request().method() === "PUT"
+    ? route.fulfill({ status: 429, contentType: "application/json", headers: { "Retry-After": "60" },
+      body: JSON.stringify({ detail: "Too many attempts. Try again shortly." }) }) : route.continue());
+  await profile.getByRole("button", { name: "Save profile" }).click();
+  await expect(page.locator("#toast")).toContainText("Too many attempts");
+  await expect(profile.getByLabel("Name", { exact: true })).toHaveValue("Retained name");
+  await expect(profile.getByLabel("Current password")).toHaveValue("synthetic-owner-password");
+  await expect(profile.getByRole("button", { name: "Save profile" })).toBeEnabled();
+  await page.getByRole("button", { name: "Sign out other sessions" }).click();
+  await expect(profile.getByLabel("Name", { exact: true })).toHaveValue("Retained name");
+  await page.unroute("**/api/auth/profile");
+  await profile.getByRole("button", { name: "Save profile" }).click();
+  await expect(page.locator("#toast")).toHaveText("Profile saved");
+  await expect(profile.getByLabel("Current password")).toHaveValue("");
+  await page.reload();
+  await navigateTo(page, "profile");
+  await expect(profile.getByLabel("Name", { exact: true })).toHaveValue("Retained name");
 });
