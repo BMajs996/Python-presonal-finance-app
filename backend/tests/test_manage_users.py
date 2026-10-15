@@ -7,16 +7,16 @@ from app.database import FinanceDatabase
 from app.services.auth_service import initialize_auth, token_hash
 
 
-def test_cli_invite_prints_single_use_fragment_and_closes_database(tmp_path, monkeypatch, capsys):
+def test_cli_reset_prints_single_use_fragment_and_closes_database(tmp_path, monkeypatch, capsys):
     database = FinanceDatabase(tmp_path / "cli.db")
     initialize_auth(database)
     monkeypatch.setattr(manage_users, "open_database", lambda _settings: database)
-    monkeypatch.setattr(sys, "argv", ["manage_users", "invite", "alice@example.com"])
+    monkeypatch.setattr(sys, "argv", ["manage_users", "reset", "owner"])
     manage_users.main()
     output = capsys.readouterr().out
     link = output.splitlines()[-1]
     parts = urlsplit(link)
-    assert parts.path == "/register" and not parts.query
+    assert parts.path == "/reset-password" and not parts.query
     token = parse_qs(parts.fragment)["token"][0]
     reopened = FinanceDatabase(tmp_path / "cli.db")
     try:

@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     owner_password_hash: SecretStr | None = None
     session_seconds: int = Field(default=28800, ge=60, le=86400)
     session_idle_seconds: int = Field(default=1800, ge=60, le=86400)
+    registration_enabled: bool = True
     recurring_interval_seconds: float = Field(default=60, ge=1, le=3600)
     recurring_max_backoff_seconds: float = Field(default=300, ge=1, le=3600)
     recurring_stale_seconds: float = Field(default=180, ge=1, le=3600)

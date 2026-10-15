@@ -70,43 +70,34 @@ def database(request, tmp_path):
         database.close()
 
 
-def invitation(service, name="alice"):
+def registration(name="alice"):
     email = name + "@example.com"
-    token = service.issue_code("invite", email)
-    payload = RegistrationRequest(
-        token=token,
+    return RegistrationRequest(
         username=name,
         display_name=name.title(),
         email=email,
         phone="+381641234567",
         password=PASSWORD,
     )
-    return token, payload
 
 
 def member(database, name="alice"):
     service = UserAccountService(database)
-    _token, payload = invitation(service, name)
+    payload = registration(name)
     return service.register(payload, "signup:" + name)
 
 
-def test_invitation_is_bound_single_use_and_creates_private_account(database):
+def test_public_registration_creates_private_unverified_member_account(database):
     service = UserAccountService(database)
-    token, payload = invitation(service)
-    with database.connection() as connection:
-        row = connection.execute("SELECT * FROM auth_codes").fetchone()
-        assert row["token_hash"] == token_hash(token) and row["token_hash"] != token
-    payload.email = "wrong@example.com"
-    with pytest.raises(HTTPException, match="invitation"):
-        service.register(payload, "wrong-address")
-    payload.email = "alice@example.com"
+    payload = registration()
     result = service.register(payload, "correct-address")
     assert result["username"] == "alice" and result["display_name"] == "Alice"
     assert result["is_admin"] == 0 and result["email_verified_at"] is None
     assert "password_hash" not in result
-    with pytest.raises(HTTPException, match="invitation"):
+    with pytest.raises(Conflict):
         service.register(payload, "replayed")
     with database.connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM auth_codes").fetchone()[0] == 0
         row = connection.execute("SELECT * FROM users WHERE id=?", (result["id"],)).fetchone()
         assert row["password_hash"].startswith("$argon2id$")
         assert row["password_hash"] != PASSWORD
@@ -116,15 +107,106 @@ def test_invitation_is_bound_single_use_and_creates_private_account(database):
         assert repo.balances.total_cents() == 0
 
 
-def test_username_collision_rolls_back_claim_and_can_be_retried(database):
+def test_registration_source_limit_precedes_hashing_and_survives_reinitialization(database, monkeypatch):
+    from app.services import auth_service, user_account_service
+
+    now = [1000]
+    monkeypatch.setattr(auth_service.time, "time", lambda: now[0])
+    auth = AuthService(database)
+    for i in range(5):
+        auth.reserve_registration("same-source", f"person{i}@example.com")
+    initialize_auth(database)
+    monkeypatch.setattr(
+        user_account_service, "hash_password", lambda _value: pytest.fail("Must throttle before hashing")
+    )
+    with pytest.raises(HTTPException) as error:
+        UserAccountService(database).register(registration(), "same-source")
+    assert error.value.status_code == 429
+    assert error.value.headers["Retry-After"] == "3600"
+    auth.reserve_registration("another-source", "other@example.com")
+    now[0] += 60
+    with pytest.raises(HTTPException) as error:
+        auth.reserve_registration("same-source", "different@example.com")
+    assert error.value.headers["Retry-After"] == "3540"
+    now[0] = 4600
+    auth.reserve_registration("same-source", "different@example.com")
+    with database.connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 1
+
+
+def test_registration_global_hour_limit_cannot_be_bypassed_with_new_sources(database, monkeypatch):
+    from app.services import auth_service
+
+    now = [1000]
+    monkeypatch.setattr(auth_service.time, "time", lambda: now[0])
+    auth = AuthService(database)
+    for i in range(50):
+        auth.reserve_registration(f"source:{i}", f"person{i}@example.com")
+    now[0] += 60
+    with pytest.raises(HTTPException) as error:
+        auth.reserve_registration("fresh-source", "fresh@example.com")
+    assert error.value.status_code == 429
+    assert error.value.headers["Retry-After"] == "3540"
+    now[0] = 4600
+    auth.reserve_registration("fresh-source", "fresh@example.com")
+
+
+def test_concurrent_signup_reservations_cannot_exceed_source_limit(database):
+    def reserve(index):
+        try:
+            AuthService(database).reserve_registration("shared-source", f"person{index}@example.com")
+            return True
+        except HTTPException as error:
+            assert error.status_code == 429
+            return False
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        assert sum(workers.map(reserve, range(6))) == 5
+    with database.connection() as connection:
+        row = connection.execute(
+            "SELECT attempts FROM auth_registration_limits WHERE bucket_key='global'"
+        ).fetchone()
+        assert row[0] == 5
+
+
+def test_duplicate_email_is_case_insensitive_and_rejected_before_hashing(database, monkeypatch):
+    from app.services import user_account_service
+
+    member(database)
+    payload = registration("bob")
+    payload.email = "ALICE@example.com"
+    monkeypatch.setattr(
+        user_account_service,
+        "hash_password",
+        lambda _value: pytest.fail("Must reject duplicate before hashing"),
+    )
+    with pytest.raises(Conflict):
+        UserAccountService(database).register(payload, "duplicate-email")
+
+
+def test_registration_can_be_disabled_without_blocking_existing_users(database, monkeypatch):
+    from app.core.config import settings
+
+    member(database)
+    monkeypatch.setattr(settings, "registration_enabled", False)
+    with pytest.raises(HTTPException) as error:
+        UserAccountService(database).register(registration("bob"), "disabled-signup")
+    assert error.value.status_code == 403
+    auth = AuthService(database)
+    token, _csrf = auth.login("alice", PASSWORD, None, "existing-user")
+    assert auth.session(token)["username"] == "alice"
+
+
+def test_username_collision_creates_nothing_and_can_be_retried(database):
     service = UserAccountService(database)
-    _token, payload = invitation(service)
+    payload = registration()
     payload.username = "OWNER"
     with pytest.raises(Conflict):
         service.register(payload, "collision")
     with database.connection() as connection:
         assert connection.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 1
-        assert connection.execute("SELECT COUNT(*) FROM auth_codes").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM auth_codes").fetchone()[0] == 0
     payload.username = "alice"
     assert service.register(payload, "retry")["username"] == "alice"
 
@@ -133,27 +215,25 @@ def test_expired_invalid_links_are_rejected_before_hashing(database, monkeypatch
     from app.services import user_account_service
 
     service = UserAccountService(database)
-    _token, payload = invitation(service)
+    member(database)
+    service.issue_code("reset", "alice")
     with database.connection() as connection, connection:
         connection.execute("UPDATE auth_codes SET expires_at=0")
     monkeypatch.setattr(
         user_account_service, "hash_password", lambda _password: pytest.fail("Must not hash invalid links")
     )
-    with pytest.raises(HTTPException, match="invitation"):
-        service.register(payload, "expired")
     with pytest.raises(HTTPException, match="recovery"):
         service.reset_password(PasswordReset(token="x" * 43, password=NEW_PASSWORD), "invalid")
 
 
-def test_concurrent_invitation_consumption_creates_exactly_one_user(database):
+def test_concurrent_registration_creates_exactly_one_user(database):
     service = UserAccountService(database)
-    _token, payload = invitation(service)
+    payload = registration()
 
     def consume():
         try:
             return service.register(payload, "concurrent")["id"]
-        except HTTPException as error:
-            assert error.status_code == 400
+        except Conflict:
             return None
 
     with ThreadPoolExecutor(max_workers=2) as workers:
@@ -392,16 +472,14 @@ def test_password_work_uses_shared_bounded_hash_slots(database, monkeypatch, fun
 
 def test_links_are_replaced_not_reused_and_invalid_targets_are_controlled(database):
     service = UserAccountService(database)
-    first, payload = invitation(service)
-    second = service.issue_code("invite", "ALICE@EXAMPLE.COM")
+    member(database)
+    first = service.issue_code("reset", "alice")
+    second = service.issue_code("reset", "ALICE")
     assert first != second
     with pytest.raises(HTTPException):
-        service.register(payload, "replaced")
-    from pydantic import SecretStr
-
-    payload.token = SecretStr(second)
-    assert service.register(payload, "current")["username"] == "alice"
-    with pytest.raises(Conflict):
+        service.reset_password(PasswordReset(token=first, password=NEW_PASSWORD), "replaced")
+    service.reset_password(PasswordReset(token=second, password=NEW_PASSWORD), "current")
+    with pytest.raises(ValueError):
         service.issue_code("invite", "alice@example.com")
     with pytest.raises(NotFound):
         service.issue_code("reset", "nobody")
@@ -432,11 +510,11 @@ def test_login_rechecks_deactivation_after_password_verification(database, monke
         assert connection.execute("SELECT COUNT(*) FROM auth_sessions WHERE user_id<>1").fetchone()[0] == 0
 
 
-def test_registration_account_failure_rolls_back_credentials_and_invitation(database, monkeypatch):
+def test_registration_account_failure_rolls_back_credentials_and_can_retry(database, monkeypatch):
     from contextlib import contextmanager
 
     service = UserAccountService(database)
-    _token, payload = invitation(service)
+    payload = registration()
     original = database.operational_transaction
 
     class FailAccount:
@@ -460,7 +538,7 @@ def test_registration_account_failure_rolls_back_credentials_and_invitation(data
     with database.connection() as connection:
         assert connection.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 1
         assert connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 1
-        assert connection.execute("SELECT COUNT(*) FROM auth_codes").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM auth_codes").fetchone()[0] == 0
     assert service.register(payload, "account-retry")["username"] == "alice"
 
 
@@ -472,7 +550,7 @@ def test_trusted_restore_revocation_invalidates_all_users_and_links(database):
     bob, _ = auth.login("bob", PASSWORD, None, "bob")
     service = UserAccountService(database)
     service.issue_code("reset", "alice")
-    service.issue_code("invite", "carol@example.com")
+    service.issue_code("reset", "bob")
     service.revoke_all()
     assert auth.session(alice) is None and auth.session(bob) is None
     with database.connection() as connection:

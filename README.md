@@ -495,13 +495,17 @@ CI supplies PostgreSQL 18 and exercises both backends.
 ## Accounts and access
 
 The [ownership foundation](docs/user-isolation.md) scopes financial repositories by
-the authenticated user. [Invite-only accounts](docs/user-accounts.md) add independent
+the authenticated user. [User accounts](docs/user-accounts.md) add independent
 passwords/sessions, profiles with email/phone and administrator-issued recovery.
 Automatic email/SMS delivery, contact verification, 2FA and Google OAuth are not enabled.
 
 All financial API routes and API documentation require a user session. There is no anonymous
-finance access or shared household ledger; users have independent data. Registration requires
-an administrator-issued invitation. Existing financial records belong to bootstrap user 1.
+finance access or shared household ledger; users have independent data. Registration is public
+at `/register`, without an invitation. New users receive an empty Main Account and no admin
+privileges. Email and phone possession are not verified yet. Existing financial records belong
+to bootstrap user 1. Set `REGISTRATION_ENABLED=false` and restart to pause new registrations
+without blocking existing users. Signup has additional database-backed limits of five attempts
+per source and 50 globally per hour, checked before password hashing.
 
 From the repository root, set or reset the password using hidden terminal prompts:
 
@@ -516,7 +520,7 @@ characters. Only an Argon2id hash is written to the private `.env`, preserving o
 Restart every app worker after changing credentials. Changing the username or password hash
 invalidates that owner's existing sessions. Other members are unaffected. Recovery links are
 issued through the trusted-host CLI; there is no email forgot-password endpoint.
-Without an owner hash, local startup is allowed but financial access remains locked.
+Without an owner hash, local startup is allowed but owner sign-in remains locked.
 
 Sessions use random opaque HttpOnly, SameSite=Strict cookies. Only token hashes are stored in
 the database, with an eight-hour absolute lifetime and 30-minute idle timeout by default.

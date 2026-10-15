@@ -1,10 +1,10 @@
-# Invite-only accounts, sessions and manual recovery
+# Public accounts, sessions and manual recovery
 
 ## Scope
 
-Users now have independent credentials and financial data. Registration requires a
-single-use invitation issued through the trusted-host CLI. There is no unrestricted
-signup, public invitation API or email-based forgot-password endpoint. Email/SMS
+Users have independent credentials and financial data. Registration at `/register`
+and `POST /api/auth/register` is public and requires no invitation or administrator
+approval. There is no email-based forgot-password endpoint. Email/SMS
 delivery, contact verification, 2FA and Google OAuth are **not implemented**. Manual
 administrator-issued recovery is the agreed mechanism until an email provider is ready.
 
@@ -15,13 +15,20 @@ Argon2id password hash, credential version, bootstrap fingerprint, administrator
 and creation timestamp. New usernames use 3-50 ASCII letters/digits/dots/underscores/
 hyphens and are unique case-insensitively. Login accepts username or email.
 
-Registration requires name, email, international phone, 15-1024 character password
-and invitation. The invitation is bound to the canonical email but manual delivery
-does not verify email/phone possession. Verification timestamps stay empty and all
+Registration requires username, name, email, international phone and a 15-1024
+character password. This does not verify email/phone possession. Verification timestamps stay empty and all
 notifications/report preferences stay off. Roles, owner IDs and verification flags
 cannot be supplied through registration/profile input. New members are not admins.
-Registration consumes the invite and creates the user and zero-balance Main Account
-atomically. Failed inserts roll back the token claim; financial history is unchanged.
+Registration creates the user and zero-balance Main Account atomically. Failed
+inserts roll back both; financial history is unchanged. Registration does not sign
+the user in or change an existing session. Username/email collisions return a
+generic 409 without overwriting or recovering an existing account.
+
+`REGISTRATION_ENABLED` defaults to true. Set it to false and restart all app workers
+to reject new signups with 403 while keeping existing accounts usable. Existing
+invitation links are no longer required or consumed; legacy registration payloads
+with a `token` field are rejected. The CLI no longer issues invitations. Old invite
+records can expire normally; no financial schema migration or deletion is necessary.
 
 Startup seeds configured owner credentials into user 1. OWNER_PASSWORD_HASH remains
 required in production for bootstrap/recovery. An unchanged configuration fingerprint
@@ -36,7 +43,6 @@ Run from the repository root with the same environment/database as the app:
 
 ```bash
 source .venv/bin/activate
-python -m backend.app.manage_users invite alice@example.com
 python -m backend.app.manage_users list
 python -m backend.app.manage_users reset alice
 python -m backend.app.manage_users disable alice
@@ -44,16 +50,19 @@ python -m backend.app.manage_users enable alice
 python -m backend.app.manage_users revoke-all
 ```
 
-Invite links expire after 48 hours; recovery links after 30 minutes. Reset takes an
+Recovery links expire after 30 minutes. Reset takes an
 existing username. Reissuing replaces the older link for that purpose/recipient.
 Only token hashes are stored. Concurrent redemption succeeds once; at most 1,000
 pending links are allowed, and issuance cleans up expired records.
 
-**Links are bearer credentials.** Verify recovery requesters manually and share links
+**Recovery links are bearer credentials.** Verify recovery requesters manually and share links
 only through a trusted private channel. Do not paste links in public issues, this
 chat, logs or shared documents. The URL fragment is not sent in HTTP requests; the
 browser removes it from the current history entry and keeps it in memory only.
 Reloading a form requires reopening its original link. Do not capture issuance stdout.
+Do not treat a claimed, unverified email or phone as proof of ownership when
+approving manual recovery. Public registration does not prevent email squatting;
+verified email onboarding and automated recovery remain separate future work.
 
 Disable/enable revokes previous sessions and recovery links and bumps the credential
 version. Enabling does not resurrect sessions. The bootstrap admin cannot be disabled
@@ -80,10 +89,10 @@ could open a different development database. For the existing systemd deployment
 sudo systemd-run --quiet --wait --pipe --collect --uid=finance \
   --property=WorkingDirectory=/opt/finance-dashboard \
   --property=EnvironmentFile=/etc/finance-dashboard/production.env \
-  /opt/finance-dashboard/.venv/bin/python -m backend.app.manage_users invite alice@example.com
+  /opt/finance-dashboard/.venv/bin/python -m backend.app.manage_users reset alice
 ```
 
-Replace the last arguments with reset/list/disable/enable as above. --pipe connects
+Replace the last arguments with list/disable/enable as above. --pipe connects
 the credential output to the terminal instead of ordinary journal output. These
 examples do not deploy or change the actual server.
 
@@ -112,8 +121,15 @@ One source's ten failed attempts do not exhaust the wider account reservation; a
 distributed attack can temporarily throttle a target, and shared-NAT bursts can hit
 source limits. Measure capacity before changing limits.
 
+Signup also reserves an hourly budget of five attempts per source and 50 globally
+in `auth_registration_limits`, under the shared auth writer reservation. Both failed
+and successful service-level attempts count. These limits persist across app restarts
+and apply before duplicate lookups/password hashing. New source addresses do not
+bypass the global hourly ceiling. Shared-NAT users can hit the five-attempt limit;
+this is intentional initial capacity protection, not CAPTCHA or DDoS protection.
+
 Nginx 16 KiB/5-second auth body/read limits now cover login, register, reset-password,
-password and profile. **Install the updated rendered proxy config before invitations.**
+password and profile. **Install the updated rendered proxy config before public signup.**
 Keep the app port private. No alternate public listener/body-buffering wrapper is added.
 
 Sanitized security events contain IDs, fixed event names and UTC epoch timestamps,
@@ -123,7 +139,8 @@ not contacts, passwords, tokens or raw IPs. Retention is capped at 90 days and a
 Before production: verified backup, restored-copy rehearsal, compare financial rows,
 amounts/history, then check bootstrap/member login, isolation, worker and readiness.
 Tests cover real member HTTP sessions, foreign finance/session IDs, privilege tampering,
-expired/replayed links, concurrent redemption, changes across restart, recovery and
+public signup, duplicates/concurrent registration, throttling before hashing,
+expired/replayed recovery links, changes across restart, recovery and
 disable/enable. Desktop/mobile workflows exercise the forms on both database backends.
 
 This work has not been deployed. Automatic email recovery/verification is not available.

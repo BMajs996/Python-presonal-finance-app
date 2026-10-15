@@ -1,4 +1,4 @@
-"""Invite-only accounts and administrator-issued, single-use recovery links."""
+"""Public registration and administrator-issued, single-use recovery links."""
 
 import secrets
 import sqlite3
@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 import psycopg
 from fastapi import HTTPException
 
+from ..core.config import settings
 from ..domain.errors import Conflict, NotFound
 from .auth_service import AuthService, hash_password, security_event, token_hash, verify_password
 
@@ -28,59 +29,42 @@ class UserAccountService:
         return dict(row)
 
     def issue_code(self, purpose: str, target: str):
-        if purpose not in {"invite", "reset"}:
+        if purpose != "reset":
             raise ValueError("Unsupported account code")
         now = int(time.time())
         token = secrets.token_urlsafe(32)
         target = target.strip().casefold()
         with self.database.operational_transaction() as connection:
             connection.execute("DELETE FROM auth_codes WHERE expires_at<=?", (now,))
-            user_id = None
-            if purpose == "invite":
-                if connection.execute(
-                    "SELECT 1 FROM users WHERE email_key=? OR username_key=?", (target, target)
-                ).fetchone():
-                    raise Conflict("An account already uses this email")
-            else:
-                user = connection.execute("SELECT id FROM users WHERE username_key=?", (target,)).fetchone()
-                if not user:
-                    raise NotFound("User not found")
-                user_id = user["id"]
-                target = str(user_id)
+            user = connection.execute("SELECT id FROM users WHERE username_key=?", (target,)).fetchone()
+            if not user:
+                raise NotFound("User not found")
+            user_id = user["id"]
+            target = str(user_id)
             connection.execute("DELETE FROM auth_codes WHERE purpose=? AND target_key=?", (purpose, target))
             if connection.execute("SELECT COUNT(*) FROM auth_codes").fetchone()[0] >= 1000:
                 raise Conflict("Too many outstanding account links")
-            lifetime = 48 * 3600 if purpose == "invite" else 1800
             connection.execute(
                 "INSERT INTO auth_codes VALUES (?,?,?,?,?)",
-                (token_hash(token), purpose, target, user_id, now + lifetime),
+                (token_hash(token), purpose, target, user_id, now + 1800),
             )
-            security_event(
-                connection, user_id, "invitation_issued" if purpose == "invite" else "recovery_issued"
-            )
+            security_event(connection, user_id, "recovery_issued")
         return token
 
     def register(self, payload, source):
-        digest = token_hash(payload.token.get_secret_value())
-        auth = AuthService(self.database)
-        auth.reserve(source, "invite:" + digest)
+        if not settings.registration_enabled:
+            raise HTTPException(403, "Registration is temporarily unavailable")
+        AuthService(self.database).reserve_registration(source, payload.email_key)
         with self.database.connection() as connection:
-            invitation = connection.execute(
-                "SELECT target_key FROM auth_codes WHERE token_hash=? AND purpose='invite' AND expires_at>?",
-                (digest, int(time.time())),
+            existing = connection.execute(
+                "SELECT 1 FROM users WHERE username_key IN (?,?) OR email_key=? LIMIT 1",
+                (payload.username.casefold(), payload.email_key, payload.email_key),
             ).fetchone()
-        if not invitation or invitation["target_key"] != payload.email_key:
-            raise HTTPException(400, "Invalid or expired invitation")
+        if existing:
+            raise Conflict("Username or email is unavailable")
         encoded = hash_password(payload.password.get_secret_value())
         try:
             with self.database.operational_transaction() as connection:
-                claim = connection.execute(
-                    "DELETE FROM auth_codes WHERE token_hash=? AND purpose='invite' "
-                    "AND target_key=? AND expires_at>? RETURNING token_hash",
-                    (digest, payload.email_key, int(time.time())),
-                ).fetchone()
-                if not claim:
-                    raise HTTPException(400, "Invalid or expired invitation")
                 user = connection.execute(
                     """INSERT INTO users(
                     username,username_key,display_name,email,email_key,phone,password_hash,created_at)
@@ -97,7 +81,7 @@ class UserAccountService:
                     ),
                 ).fetchone()
                 user_id = user["id"]
-                # Account creation and token consumption share the same transaction as the credentials.
+                # Credentials and the private Main Account must succeed or roll back together.
                 connection.execute(
                     """INSERT INTO accounts(
                     name,type,currency,opening_balance,opening_balance_cents,active,created_at,user_id)

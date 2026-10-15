@@ -41,6 +41,7 @@ AUTH_TABLES = {
     "auth_account_limits",
     "auth_codes",
     "auth_security_events",
+    "auth_registration_limits",
 }
 
 
@@ -97,6 +98,11 @@ def initialize_auth(database):
             token_hash TEXT PRIMARY KEY, purpose TEXT NOT NULL CHECK(purpose IN ('invite','reset')),
             target_key TEXT NOT NULL, user_id BIGINT REFERENCES users(id) ON DELETE RESTRICT,
             expires_at BIGINT NOT NULL, UNIQUE(purpose,target_key))""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS auth_registration_limits (
+            bucket_key TEXT PRIMARY KEY, window_start BIGINT NOT NULL, attempts INTEGER NOT NULL)""")
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_registration_window ON auth_registration_limits(window_start)"
+        )
         connection.execute("""CREATE TABLE IF NOT EXISTS auth_security_events (
             event_id TEXT PRIMARY KEY, user_id BIGINT REFERENCES users(id) ON DELETE RESTRICT,
             event TEXT NOT NULL, occurred_at BIGINT NOT NULL)""")
@@ -162,6 +168,29 @@ def security_event(connection, user_id, event):
 class AuthService:
     def __init__(self, database):
         self.database = database
+
+    def reserve_registration(self, source: str, email_key: str):
+        self.reserve(source, "register:" + email_key)
+        now = int(time.time())
+        buckets = (("source:" + token_hash(source), 5), ("global", 50))
+        with self.database.operational_transaction() as connection:
+            connection.execute("DELETE FROM auth_registration_limits WHERE window_start<=?", (now - 3600,))
+            for key, limit in buckets:
+                row = connection.execute(
+                    "SELECT * FROM auth_registration_limits WHERE bucket_key=?", (key,)
+                ).fetchone()
+                if row and row["attempts"] >= limit:
+                    raise HTTPException(
+                        429,
+                        "Too many registration attempts. Try again later.",
+                        headers={"Retry-After": str(max(1, 3600 - (now - row["window_start"])))},
+                    )
+            for key, _limit in buckets:
+                connection.execute(
+                    "INSERT INTO auth_registration_limits VALUES (?,?,1) ON CONFLICT(bucket_key) "
+                    "DO UPDATE SET attempts=auth_registration_limits.attempts+1",
+                    (key, now),
+                )
 
     def reserve(self, source: str, target: str):
         now = int(time.time())

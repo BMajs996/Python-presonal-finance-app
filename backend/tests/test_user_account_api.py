@@ -25,11 +25,9 @@ def clients(request, tmp_path, monkeypatch):
             client = TestClient(app)
             stack.callback(client.close)
             client.headers["Origin"] = "http://testserver"
-            token = service.issue_code("invite", name + "@example.com")
             response = client.post(
                 "/api/auth/register",
                 json={
-                    "token": token,
                     "username": name,
                     "display_name": name.title(),
                     "email": name + "@example.com",
@@ -38,7 +36,7 @@ def clients(request, tmp_path, monkeypatch):
                 },
             )
             assert response.status_code == 201, response.text
-            assert "password_hash" not in response.text and token not in response.text
+            assert "password_hash" not in response.text
             login = client.post("/api/auth/login", json={"username": name, "password": PASSWORD})
             assert login.status_code == 200, login.text
             session = login.json()
@@ -80,6 +78,66 @@ def test_real_member_sessions_enforce_data_and_operation_isolation(clients):
     )
 
 
+def test_anonymous_registration_needs_no_invite_but_does_not_grant_a_session(clients):
+    owner, _service, _members = clients
+    response = owner.post(
+        "/api/auth/register",
+        json={
+            "username": "carol",
+            "display_name": "Carol",
+            "email": "carol@example.com",
+            "phone": "+381641234567",
+            "password": PASSWORD,
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["is_admin"] is False
+    assert response.json()["email_verified_at"] is None
+    assert not response.cookies
+    assert owner.get("/api/accounts").status_code == 401
+    assert owner.post("/api/auth/login", json={"username": "carol", "password": PASSWORD}).status_code == 200
+    assert len(owner.get("/api/accounts").json()) == 1
+
+
+def test_cross_origin_registration_is_rejected_without_creating_a_user(clients):
+    owner, _service, _members = clients
+    response = owner.post(
+        "/api/auth/register",
+        headers={"Origin": "https://untrusted.example"},
+        json={
+            "username": "carol",
+            "display_name": "Carol",
+            "email": "carol@example.com",
+            "phone": "+381641234567",
+            "password": PASSWORD,
+        },
+    )
+    assert response.status_code == 403
+    assert owner.post("/api/auth/login", json={"username": "carol", "password": PASSWORD}).status_code == 401
+
+
+def test_signup_rate_limit_returns_retry_after_without_extra_accounts(clients):
+    owner, _service, _members = clients
+    payload = {
+        "username": "carol",
+        "display_name": "Carol",
+        "email": "carol@example.com",
+        "phone": "+381641234567",
+        "password": PASSWORD,
+    }
+    # The fixture registered two members from this source; all service attempts count.
+    assert owner.post("/api/auth/register", json=payload).status_code == 201
+    for _ in range(2):
+        assert owner.post("/api/auth/register", json=payload).status_code == 409
+    payload.update(username="dave", email="dave@example.com")
+    response = owner.post("/api/auth/register", json=payload)
+    assert response.status_code == 429
+    assert 1 <= int(response.headers["Retry-After"]) <= 3600
+    with app.state.database.connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 4
+        assert connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 4
+
+
 def test_session_controls_require_csrf_and_cannot_revoke_another_user(clients):
     _owner, _service, members = clients
     alice, _first = members[0]
@@ -114,9 +172,7 @@ def test_password_change_revokes_sessions_and_leaves_other_user_usable(clients):
 
 def test_secret_fields_are_redacted_and_privileged_registration_fields_rejected(clients):
     owner, service, members = clients
-    token = service.issue_code("invite", "carol@example.com")
     payload = {
-        "token": token,
         "username": "carol",
         "display_name": "Carol",
         "email": "carol@example.com",
@@ -127,7 +183,7 @@ def test_secret_fields_are_redacted_and_privileged_registration_fields_rejected(
     }
     response = owner.post("/api/auth/register", json=payload)
     assert response.status_code == 422
-    assert token not in response.text and PASSWORD not in response.text
+    assert PASSWORD not in response.text
     assert members[0][0].get("/api/auth/profile").json()["is_admin"] is False
     payload.pop("is_admin")
     payload.pop("user_id")
@@ -204,9 +260,7 @@ def test_invalid_unicode_credentials_are_validation_errors_not_database_failures
 
     response = post("/api/auth/login", {"username": value, "password": PASSWORD})
     assert response.status_code == 422
-    token = service.issue_code("invite", "carol@example.com")
     payload = {
-        "token": token,
         "username": "carol",
         "display_name": value,
         "email": "carol@example.com",
@@ -217,3 +271,6 @@ def test_invalid_unicode_credentials_are_validation_errors_not_database_failures
     payload["display_name"] = "Carol"
     payload["token"] = "\ud800" * 43
     assert post("/api/auth/register", payload).status_code == 422
+    assert (
+        post("/api/auth/reset-password", {"token": payload["token"], "password": PASSWORD}).status_code == 422
+    )
