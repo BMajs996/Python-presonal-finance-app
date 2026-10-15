@@ -27,6 +27,7 @@ if __name__ == "__main__":
         os.environ["OWNER_PASSWORD_HASH"] = PasswordHasher().hash("synthetic-owner-password")
         os.environ["OWNER_USERNAME"] = "owner"
         os.environ["ENVIRONMENT"] = "development"
+        os.environ["REGISTRATION_ENABLED"] = "true"
         os.environ["ALLOWED_HOSTS"] = "localhost,127.0.0.1"
         if os.environ.get("E2E_LEDGER_SCENARIO") == "1":
             from datetime import UTC, date, datetime, timedelta
@@ -96,16 +97,6 @@ if __name__ == "__main__":
             from backend.app.services.user_account_service import UserAccountService
 
             # Credential issuance exists only in disposable test servers, not production routes.
-            @app.post("/api/e2e/invite-member")
-            def invite_member(request: Request):
-                if not request.state.owner_session["is_admin"]:
-                    raise HTTPException(403, "Administrator access required")
-                return {
-                    "token": UserAccountService(request.app.state.database).issue_code(
-                        "invite", "member@example.com"
-                    )
-                }
-
             @app.post("/api/e2e/reset-member")
             def reset_member(request: Request):
                 if not request.state.owner_session["is_admin"]:

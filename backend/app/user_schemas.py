@@ -1,4 +1,4 @@
-"""Validated contact and credential input for invite-only user accounts."""
+"""Validated contact and credential input for user accounts."""
 
 import re
 from typing import Annotated
@@ -45,7 +45,6 @@ class RegistrationContacts(BaseModel):
 
 
 class RegistrationRequest(RegistrationContacts):
-    token: AccountToken
     username: str = Field(min_length=3, max_length=50, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
     display_name: str = Field(min_length=1, max_length=100)
     password: SecretStr = Field(min_length=15, max_length=1024)

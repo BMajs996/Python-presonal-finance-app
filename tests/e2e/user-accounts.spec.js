@@ -5,16 +5,15 @@ test.use({ accountScenario: true });
 const password = "synthetic-member-password";
 const replacement = "synthetic-replacement-password";
 
-async function register(page, appURL, token, fromLogin = false) {
+async function register(page, appURL, fromLogin = false) {
   if (fromLogin) {
     await page.goto(appURL + "/login");
     await page.getByRole("link", { name: "Create account", exact: true }).click();
-    await page.getByLabel("Invitation link").fill(`${appURL}/register#token=${token}`);
   } else {
-    await page.goto(`${appURL}/register#token=${encodeURIComponent(token)}`);
-    await expect(page.getByLabel("Invitation link")).toBeHidden();
+    await page.goto(`${appURL}/register`);
   }
   await expect(page).toHaveURL(appURL + "/register");
+  await expect(page.locator("#invitation")).toHaveCount(0);
   await page.getByLabel("Name", { exact: true }).fill("Member One");
   await page.getByLabel("Username", { exact: true }).fill("member");
   await page.getByLabel("Email", { exact: true }).fill("member@example.com");
@@ -22,16 +21,11 @@ async function register(page, appURL, token, fromLogin = false) {
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByLabel("Confirm password", { exact: true }).fill(password);
   if (fromLogin) {
-    const requests = [];
-    page.on("request", request => {
-      if (request.url().endsWith("/api/auth/register")) requests.push(request);
-    });
-    await page.getByLabel("Invitation link").fill(`https://untrusted.example/register#token=${token}`);
+    await page.getByLabel("Confirm password", { exact: true }).fill("synthetic-mismatched-password");
     await page.getByRole("button", { name: "Create account", exact: true }).click();
-    await expect(page.locator("#account-error")).toHaveText("A valid account link is required.");
-    expect(requests).toHaveLength(0);
+    await expect(page.locator("#account-error")).toHaveText("Passwords do not match.");
     await expect(page.getByLabel("Email", { exact: true })).toHaveValue("member@example.com");
-    await page.getByLabel("Invitation link").fill(`${appURL}/register#token=${token}`);
+    await page.getByLabel("Confirm password", { exact: true }).fill(password);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: `/tmp/finance-register-${page.viewportSize().width}.png`, fullPage: true });
   }
@@ -49,13 +43,12 @@ async function signIn(page, appURL, value) {
   await expect(page.locator("#signed-in-name")).toContainText("Member");
 }
 
-test("invited member has private data, editable profile and persistent password changes", async ({ page, appURL }, testInfo) => {
+test("publicly registered member has private data, editable profile and persistent password changes", async ({ page, appURL }, testInfo) => {
   const today = (await (await page.request.get(appURL + "/api/ledger-policy")).json()).business_date;
   expect((await page.request.post(appURL + "/api/transactions", { data: {
     date: today, type: "income", category: "Salary", amount: "777.77", description: "Owner-only salary",
   } })).status()).toBe(201);
-  const invitation = await (await page.request.post(appURL + "/api/e2e/invite-member")).json();
-  await register(page, appURL, invitation.token);
+  await register(page, appURL);
   await signIn(page, appURL, password);
   await expect(page.locator("#balance")).toHaveText("$0.00");
   expect((await (await page.request.get(appURL + "/api/transactions")).json()).total).toBe(0);
@@ -83,9 +76,9 @@ test("invited member has private data, editable profile and persistent password 
   await expect(page.locator("#profile-name")).toHaveValue("Member Updated");
 });
 
-test("login offers invite-only registration with a pasted invitation link", async ({ page, appURL }, testInfo) => {
-  const invitation = await (await page.request.post(appURL + "/api/e2e/invite-member")).json();
-  await register(page, appURL, invitation.token, true);
+test("login offers public registration without an invitation", async ({ page, appURL }, testInfo) => {
+  await page.context().clearCookies();
+  await register(page, appURL, true);
   await signIn(page, appURL, password);
   await expect(page.locator("#balance")).toHaveText("$0.00");
   await page.goto(appURL + "/login");
@@ -93,9 +86,32 @@ test("login offers invite-only registration with a pasted invitation link", asyn
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+test("registration throttling preserves input and permits retry after the limit clears", async ({ page, appURL }) => {
+  await page.context().clearCookies();
+  await page.route("**/api/auth/register", route => route.fulfill({
+    status: 429, contentType: "application/json", headers: { "Retry-After": "3600" },
+    body: JSON.stringify({ detail: "Too many registration attempts. Try again later." }),
+  }));
+  await page.goto(appURL + "/register");
+  await page.getByLabel("Name", { exact: true }).fill("Member One");
+  await page.getByLabel("Username", { exact: true }).fill("member");
+  await page.getByLabel("Email", { exact: true }).fill("member@example.com");
+  await page.getByLabel("Phone (international)").fill("+381641234567");
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByLabel("Confirm password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Create account", exact: true }).click();
+  await expect(page.locator("#account-error")).toContainText("Too many registration attempts");
+  await expect(page.getByLabel("Username", { exact: true })).toHaveValue("member");
+  await expect(page.getByLabel("Password", { exact: true })).toHaveValue(password);
+  await expect(page.getByRole("button", { name: "Create account", exact: true })).toBeEnabled();
+  await page.unroute("**/api/auth/register");
+  await page.getByRole("button", { name: "Create account", exact: true }).click();
+  await expect(page).toHaveURL(appURL + "/login");
+  await signIn(page, appURL, password);
+});
+
 test("administrator-issued recovery link resets a member once and invalidates old sessions", async ({ page, appURL }) => {
-  const invitation = await (await page.request.post(appURL + "/api/e2e/invite-member")).json();
-  await register(page, appURL, invitation.token);
+  await register(page, appURL);
   // Registration leaves the owner's cookie intact until a member signs in.
   const recovery = await (await page.request.post(appURL + "/api/e2e/reset-member")).json();
   await signIn(page, appURL, password);
