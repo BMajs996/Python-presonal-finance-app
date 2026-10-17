@@ -8,7 +8,7 @@
     "vendor:charts": "node scripts/vendor-charts.js"
   },
   "devDependencies": {
-    "@playwright/test": "1.63.0"
+    "@playwright/test": "1.64.0"
   },
   "dependencies": {
     "chart.js": "4.5.1"
